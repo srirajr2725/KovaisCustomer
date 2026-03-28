@@ -601,11 +601,3 @@ const styles = StyleSheet.create({
 });
 
 export default GentsParlour;
-      justifyContent: 'center',
-      borderWidth: 1.5,
-      borderColor: 'rgba(255,255,255,0.1)',
-      zIndex: 100,
-  }
-});
-
-export default GentsParlour;
