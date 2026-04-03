@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { launchImageLibrary } from 'react-native-image-picker';
 import {
   View,
   Text,
@@ -16,6 +17,8 @@ import {
   Linking,
   SafeAreaView,
   StatusBar,
+  PermissionsAndroid,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -42,6 +45,7 @@ import {
   Zap,
   ArrowLeft,
 } from 'lucide-react-native';
+import PaymentModal from '../PaymentModel';
 
 const { width, height } = Dimensions.get('window');
 const MODAL_HEIGHT = height * 0.85;
@@ -139,7 +143,7 @@ const DateCalendar = ({ isOpen, onClose, onDateSelect, selectedDate, position })
     // Manual format to avoid toLocaleDateString variations across platforms
     const monthName = monthNames[newDate.getMonth()];
     const formattedDate = `${monthName} ${newDate.getDate()}, ${newDate.getFullYear()}`;
-    
+
     onDateSelect(formattedDate);
     onClose();
   };
@@ -201,14 +205,14 @@ const DateCalendar = ({ isOpen, onClose, onDateSelect, selectedDate, position })
                   onPress={() => !isPastDate && handleDateClick(day)}
                   disabled={isPastDate}
                   style={[
-                    styles.dayButton, 
-                    isToday && styles.todayButton, 
+                    styles.dayButton,
+                    isToday && styles.todayButton,
                     isSelected && styles.selectedDayButton,
                     isPastDate && styles.disabledDay
                   ]}>
                   <Text style={[
-                    styles.dayText, 
-                    isToday && styles.todayText, 
+                    styles.dayText,
+                    isToday && styles.todayText,
                     isSelected && styles.selectedDayText,
                     isPastDate && styles.disabledText
                   ]}>
@@ -233,6 +237,128 @@ const DateCalendar = ({ isOpen, onClose, onDateSelect, selectedDate, position })
 
 const HotelBooking = ({ goBack }) => {
   const insets = useSafeAreaInsets();
+
+  // Format date for API - Defined early to avoid reference errors
+  const formatDateForAPI = useCallback((dateString) => {
+    if (!dateString) return '';
+
+    const monthNames = {
+      'January': 0, 'February': 1, 'March': 2, 'April': 3,
+      'May': 4, 'June': 5, 'July': 6, 'August': 7,
+      'September': 8, 'October': 9, 'November': 10, 'December': 11
+    };
+
+    // Clean the string: remove comma and normalize spaces
+    const cleanStr = dateString.replace(',', '').replace(/\s+/g, ' ').trim();
+    const parts = cleanStr.split(' ');
+
+    if (parts.length !== 3) return '';
+
+    // Handle Month Day Year format
+    let monthIndex = monthNames[parts[0]];
+    let day = parseInt(parts[1]);
+    let year = parseInt(parts[2]);
+
+    // Fallback if format is Day Month Year
+    if (monthIndex === undefined) {
+      monthIndex = monthNames[parts[1]];
+      day = parseInt(parts[0]);
+      year = parseInt(parts[2]);
+    }
+
+    if (monthIndex === undefined || isNaN(day) || isNaN(year)) return '';
+
+    const date = new Date(year, monthIndex, day);
+    if (isNaN(date.getTime())) return '';
+
+    const formattedYear = date.getFullYear();
+    const formattedMonth = String(date.getMonth() + 1).padStart(2, '0');
+    const formattedDay = String(date.getDate()).padStart(2, '0');
+
+    return `${formattedYear}-${formattedMonth}-${formattedDay}`;
+  }, []);
+
+  // Format Aadhar Number (XXXX XXXX XXXX)
+  const formatAadhar = (text) => {
+    const cleaned = text.replace(/\D/g, '');
+    const limited = cleaned.slice(0, 12);
+    const match = limited.match(/.{1,4}/g);
+    return match ? match.join(' ') : limited;
+  };
+
+  // Real Image Picker for Aadhar Upload
+  const handleAadharUpload = async () => {
+    const options = {
+      mediaType: 'photo',
+      includeBase64: true,
+      maxHeight: 1000, // Reduced for smaller payload
+      maxWidth: 1000,
+      quality: 0.6,
+    };
+
+    try {
+      // For Android 9/10, request storage permission explicitly
+      if (Platform.OS === 'android') {
+        const hasPermission = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+        );
+
+        if (!hasPermission) {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+            {
+              title: "Storage Permission",
+              message: "Premium Hotels needs access to your gallery to upload ID proof.",
+              buttonNeutral: "Ask Me Later",
+              buttonNegative: "Cancel",
+              buttonPositive: "OK"
+            }
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            showPopup('Permission Denied', 'Storage access is required to upload Aadhar proof.', 'error');
+            return;
+          }
+        }
+      }
+
+      if (typeof launchImageLibrary !== 'function') {
+        throw new Error("Gallery Module Not Initialized. Please rebuild the app.");
+      }
+
+      console.log('Attempting to launch gallery...');
+      const result = await launchImageLibrary(options);
+
+      if (result.didCancel) {
+        console.log('User cancelled image selection');
+        return;
+      }
+
+      if (result.errorCode) {
+        console.error('Picker Error Code:', result.errorCode);
+        showPopup('Upload Error', result.errorMessage || `Error: ${result.errorCode}`, 'error');
+        return;
+      }
+
+      if (result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const imageData = asset.base64 ? `data:${asset.type};base64,${asset.base64}` : asset.uri;
+        console.log('Successfully selected image:', asset.uri);
+        setAadharImage(imageData);
+        setAadharFile({
+          uri: asset.uri,
+          type: asset.type || 'image/jpeg',
+          name: asset.fileName || `aadhar_${Date.now()}.jpg`
+        });
+        setBookingError("");
+      }
+    } catch (error) {
+      console.error('Gallery Critical Error:', error);
+      Alert.alert(
+        'System Error',
+        `Could not open gallery: ${error.message}\n\nPlease ensure the app is rebuilt and has photo permissions.`
+      );
+    }
+  };
 
   // Auth State
   const [user, setUser] = useState(null);
@@ -282,6 +408,17 @@ const HotelBooking = ({ goBack }) => {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [localProcessing, setLocalProcessing] = useState(false);
   const [localSuccess, setLocalSuccess] = useState(false);
+  const [aadharImage, setAadharImage] = useState(null);
+  const [aadharFile, setAadharFile] = useState(null);
+
+  // Memoized nights calculation for real-time pricing
+  const nights = React.useMemo(() => {
+    if (!checkInDate || !checkOutDate) return 1;
+    const d1 = new Date(formatDateForAPI(checkInDate));
+    const d2 = new Date(formatDateForAPI(checkOutDate));
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 1;
+    return Math.max(1, Math.ceil((d2 - d1) / (1000 * 60 * 60 * 24)));
+  }, [checkInDate, checkOutDate, formatDateForAPI]);
 
   // Popup state
   const [popup, setPopup] = useState({
@@ -316,7 +453,7 @@ const HotelBooking = ({ goBack }) => {
       description: 'Experience luxury with 24 Hours room service, panoramic city views, and smart home automation.',
       price: 1000,
       originalPrice: 1500,
-      taxes: 788,
+      taxes: 120, // 12% estimated
       rating: 4.8,
       reviewCount: 342,
       location: 'Gobichettypalayam Premium District',
@@ -345,7 +482,7 @@ const HotelBooking = ({ goBack }) => {
       description: 'The pinnacle of business comfort featuring 24/7 private terrace access, professional desk space, and spa inclusion.',
       price: 2500,
       originalPrice: 3500,
-      taxes: 1200,
+      taxes: 300, // 12% estimated
       rating: 4.9,
       reviewCount: 156,
       location: 'South District Executive Row',
@@ -371,7 +508,7 @@ const HotelBooking = ({ goBack }) => {
       description: 'Palatial living across 3000 sq ft. Private pool, dedicated butler, and exclusive garden terrace access.',
       price: 5000,
       originalPrice: 7500,
-      taxes: 2500,
+      taxes: 600, // 12% estimated
       rating: 5.0,
       reviewCount: 42,
       location: 'The Ridge Royal District',
@@ -445,46 +582,6 @@ const HotelBooking = ({ goBack }) => {
       BackHandler.exitApp();
     }
   };
-
-  // Format date for API
-  const formatDateForAPI = useCallback((dateString) => {
-    if (!dateString) return '';
-
-    const monthNames = {
-      'January': 0, 'February': 1, 'March': 2, 'April': 3,
-      'May': 4, 'June': 5, 'July': 6, 'August': 7,
-      'September': 8, 'October': 9, 'November': 10, 'December': 11
-    };
-
-    // Clean the string: remove comma and normalize spaces
-    const cleanStr = dateString.replace(',', '').replace(/\s+/g, ' ').trim();
-    const parts = cleanStr.split(' ');
-    
-    if (parts.length !== 3) return '';
-
-    // Handle Month Day Year format
-    let monthIndex = monthNames[parts[0]];
-    let day = parseInt(parts[1]);
-    let year = parseInt(parts[2]);
-
-    // Fallback if format is Day Month Year
-    if (monthIndex === undefined) {
-        monthIndex = monthNames[parts[1]];
-        day = parseInt(parts[0]);
-        year = parseInt(parts[2]);
-    }
-
-    if (monthIndex === undefined || isNaN(day) || isNaN(year)) return '';
-
-    const date = new Date(year, monthIndex, day);
-    if (isNaN(date.getTime())) return '';
-
-    const formattedYear = date.getFullYear();
-    const formattedMonth = String(date.getMonth() + 1).padStart(2, '0');
-    const formattedDay = String(date.getDate()).padStart(2, '0');
-
-    return `${formattedYear}-${formattedMonth}-${formattedDay}`;
-  }, []);
 
   // Fetch room availability
   const fetchRoomAvailability = useCallback(async () => {
@@ -750,12 +847,20 @@ const HotelBooking = ({ goBack }) => {
     if (updatedCounts[index] < availableRooms) {
       updatedCounts[index] += 1;
       setRoomCounts(updatedCounts);
-      
-      // If this is the currently selected room being viewed in the summary/checkout
+
+      const currentPrice = updatedCounts[index] * rooms[index].price * nights;
+      const currentTax = Math.round(currentPrice * 0.12);
+      const newTotal = currentPrice + currentTax;
+
       if (selectedRoom && selectedRoom.id === rooms[index].id) {
-          const newTotal = (updatedCounts[index] * rooms[index].price * selectedRoom.nights) + rooms[index].taxes;
-          setTotalAmount(newTotal);
-          setSelectedRoom(prev => ({ ...prev, roomCount: updatedCounts[index], totalAmount: newTotal }));
+        setTotalAmount(newTotal);
+        setSelectedRoom(prev => ({
+          ...prev,
+          roomCount: updatedCounts[index],
+          totalAmount: newTotal,
+          nights,
+          taxes: currentTax
+        }));
       }
     }
   };
@@ -766,10 +871,19 @@ const HotelBooking = ({ goBack }) => {
       updatedCounts[index] -= 1;
       setRoomCounts(updatedCounts);
 
+      const currentPrice = updatedCounts[index] * rooms[index].price * nights;
+      const currentTax = Math.round(currentPrice * 0.12);
+      const newTotal = currentPrice + currentTax;
+
       if (selectedRoom && selectedRoom.id === rooms[index].id) {
-          const newTotal = (updatedCounts[index] * rooms[index].price * selectedRoom.nights) + rooms[index].taxes;
-          setTotalAmount(newTotal);
-          setSelectedRoom(prev => ({ ...prev, roomCount: updatedCounts[index], totalAmount: newTotal }));
+        setTotalAmount(newTotal);
+        setSelectedRoom(prev => ({
+          ...prev,
+          roomCount: updatedCounts[index],
+          totalAmount: newTotal,
+          nights,
+          taxes: currentTax
+        }));
       }
     }
   };
@@ -810,22 +924,22 @@ const HotelBooking = ({ goBack }) => {
       return;
     }
 
-    const d1 = new Date(formatDateForAPI(checkInDate));
-    const d2 = new Date(formatDateForAPI(checkOutDate));
-    const nights = Math.max(1, Math.ceil((d2 - d1) / (1000 * 60 * 60 * 24)));
+    const currentPrice = roomCounts[index] * room.price * nights;
+    const currentTax = Math.round(currentPrice * 0.12);
+    const calculatedTotal = currentPrice + currentTax;
 
-    const calculatedTotal = (roomCounts[index] * room.price * nights) + room.taxes;
     const roomWithDetails = {
       ...room,
       roomCount: roomCounts[index],
       guestCount: guestCounts[index],
       totalAmount: calculatedTotal,
-      nights: nights
+      nights: nights,
+      taxes: currentTax
     };
 
     setSelectedRoom(roomWithDetails);
     setTotalAmount(calculatedTotal);
-    
+
     // Set a default purpose to make it easier to proceed
     if (!purposeOfVisit) setPurposeOfVisit('Leisure');
 
@@ -841,8 +955,13 @@ const HotelBooking = ({ goBack }) => {
   };
 
   const handleProceedToPayment = () => {
+    setBookingError("");
     if (!purposeOfVisit.trim()) {
       setBookingError('Please enter the purpose of your visit');
+      return;
+    }
+    if (!aadharImage) {
+      setBookingError('Please upload your Aadhar Card photo proof');
       return;
     }
     setShowModal(false);
@@ -939,36 +1058,49 @@ const HotelBooking = ({ goBack }) => {
         return;
       }
 
-      const bookingData = {
-        customer_id: userId,
-        customer_name: finalName,
-        customer_phone: finalPhone,
-        customer_email: finalEmail,
-        phone: finalPhone,
-        username: finalName,
+      const rawPhone = user?.phone || user?.mobile || user?.customer_phone || user?.contact || finalPhone || '';
+      const bookingData = new FormData();
+      bookingData.append('customer_id', String(userId));
+      bookingData.append('guest_name', finalName);
+      bookingData.append('customer_phone', rawPhone);
+      bookingData.append('phone', rawPhone);
+      bookingData.append('mobile', rawPhone);
+      bookingData.append('mobile_no', rawPhone);
+      bookingData.append('phone_number', rawPhone);
+      bookingData.append('mobile_number', rawPhone);
+      bookingData.append('contact', rawPhone);
+      bookingData.append('contact_number', rawPhone);
+      bookingData.append('customer_mobile', rawPhone);
+      bookingData.append('customer_contact', rawPhone);
+      bookingData.append('amount', String(totalAmount));
+      bookingData.append('points', String(usedPoints));
+      bookingData.append('check_in', `${formattedCheckIn}T12:00:00`);
+      bookingData.append('check_out', `${formattedCheckOut}T11:00:00`);
+      bookingData.append('date_in', formattedCheckIn);
+      bookingData.append('date_out', formattedCheckOut);
+      bookingData.append('category', 'Hotel');
+      bookingData.append('visit', purposeOfVisit || 'Personal');
+      bookingData.append('room_count', String(selectedRoom.roomCount));
+      bookingData.append('guest_count', String(selectedRoom.guestCount));
+      bookingData.append('status', 'booked');
+      bookingData.append('payment_status', paymentStatus);
+      bookingData.append('details', JSON.stringify({
         room_type: selectedRoom.type,
-        room_count: selectedRoom.roomCount,
-        guest_count: selectedRoom.guestCount,
-        date_in: formattedCheckIn,
-        date_out: formattedCheckOut,
-        amount: totalAmount,
-        total_amount: totalAmount,
-        payment_status: paymentStatus,
+        special_requests: selectedOptions,
         payment_type: paymentType,
-        payment_method: selectedPaymentMethod || 'Cash',
-        purpose_of_visit: purposeOfVisit,
-        special_requests: JSON.stringify(selectedOptions),
-        points_used: usedPoints,
-        status: 'booked',
-      };
+        payment_method: selectedPaymentMethod || 'Cash'
+      }));
+
+      if (aadharFile) {
+        bookingData.append('aadhar', aadharFile);
+      }
 
       const response = await fetch('https://api.codingboss.in/kovais/hotel/orders/', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: JSON.stringify(bookingData)
+        body: bookingData
       });
 
       const data = await response.json();
@@ -978,14 +1110,19 @@ const HotelBooking = ({ goBack }) => {
         try {
           const localOrders = await AsyncStorage.getItem('offline_orders');
           const orders = localOrders ? JSON.parse(localOrders) : [];
-          orders.unshift({
+
+          // Create a slimmed-down version for local storage (no huge image)
+          const localOrder = {
             ...bookingData,
+            aadhar_photo: null, // Don't store large images in AsyncStorage
             id: data.id || `local_hotel_${Date.now()}`,
             Category: 'hotel',
             created_at: new Date().toISOString(),
             status: 'booked'
-          });
-          await AsyncStorage.setItem('offline_orders', JSON.stringify(orders));
+          };
+
+          orders.unshift(localOrder);
+          await AsyncStorage.setItem('offline_orders', JSON.stringify(orders.slice(0, 50))); // Keep last 50
         } catch (storageError) {
           console.error('Local storage error:', storageError);
         }
@@ -1015,6 +1152,9 @@ const HotelBooking = ({ goBack }) => {
             onPress: () => {
               setSelectedRoom(null);
               setDateError('');
+              setAadharImage(null);
+              setAadharFile(null);
+              setRoomCounts(rooms.map(() => 1));
             }
           }]
         );
@@ -1022,55 +1162,55 @@ const HotelBooking = ({ goBack }) => {
         throw new Error(data.error || data.message || 'Booking failed');
       }
     } catch (error) {
-       console.warn('Hotel API Error, using static fallback:', error);
-       
-       // Even on error/fallback, save locally so it shows in history
-       try {
-         const localOrders = await AsyncStorage.getItem('offline_orders');
-         const orders = localOrders ? JSON.parse(localOrders) : [];
-         orders.unshift({
-            customer_id: getUserId(),
-            customer_name: user?.name || user?.username || 'Valued Guest',
-            room_type: selectedRoom.type,
-            room_count: selectedRoom.roomCount,
-            date_in: formatDateForAPI(checkInDate),
-            date_out: formatDateForAPI(checkOutDate),
-            amount: totalAmount,
-            status: 'booked',
-            Category: 'hotel',
-            created_at: new Date().toISOString(),
-            id: `offline_hotel_${Date.now()}`
-         });
-         await AsyncStorage.setItem('offline_orders', JSON.stringify(orders));
-       } catch (err) {
-         console.error('Fallback storage error:', err);
-       }
+      console.warn('Hotel API Error, using static fallback:', error);
 
-       setShowPaymentModal(false);
-       setShowUpiAppsModal(false);
-       setPurposeOfVisit('');
-       setUsedPoints(0);
-       setValue('');
-       setBookingError('');
-       setSelectedPaymentMethod(null);
-       
-       showPopup(
-         'Booking Secured',
-         'Your premium reservation has been confirmed (Offline Mode). We look forward to your arrival!',
-         'success',
-         [{
-           text: 'OK',
-           style: 'primary',
-           onPress: () => {
-             setSelectedRoom(null);
-             setDateError('');
-           }
-         }]
-       );
+      // Even on error/fallback, save locally so it shows in history
+      try {
+        const localOrders = await AsyncStorage.getItem('offline_orders');
+        const orders = localOrders ? JSON.parse(localOrders) : [];
+        orders.unshift({
+          customer_id: getUserId(),
+          customer_name: user?.name || user?.username || 'Valued Guest',
+          room_type: selectedRoom.type,
+          room_count: selectedRoom.roomCount,
+          date_in: formatDateForAPI(checkInDate),
+          date_out: formatDateForAPI(checkOutDate),
+          amount: totalAmount,
+          status: 'booked',
+          Category: 'hotel',
+          created_at: new Date().toISOString(),
+          id: `offline_hotel_${Date.now()}`
+        });
+        await AsyncStorage.setItem('offline_orders', JSON.stringify(orders));
+      } catch (err) {
+        console.error('Fallback storage error:', err);
+      }
+
+      setShowPaymentModal(false);
+      setShowUpiAppsModal(false);
+      setPurposeOfVisit('');
+      setUsedPoints(0);
+      setValue('');
+      setBookingError('');
+      setSelectedPaymentMethod(null);
+
+      showPopup(
+        'Booking Secured',
+        'Your premium reservation has been confirmed (Offline Mode). We look forward to your arrival!',
+        'success',
+        [{
+          text: 'OK',
+          style: 'primary',
+          onPress: () => {
+            setSelectedRoom(null);
+            setDateError('');
+          }
+        }]
+      );
     } finally {
       setLoading(false);
     }
-  }, [checkInDate, checkOutDate, selectedRoom, totalAmount, purposeOfVisit, selectedOptions, usedPoints, user, points, selectedPaymentMethod, getUserId, formatDateForAPI, fetchRoomAvailability]);
+  }, [checkInDate, checkOutDate, selectedRoom, totalAmount, aadharImage, purposeOfVisit, selectedOptions, usedPoints, user, points, selectedPaymentMethod, getUserId, formatDateForAPI, fetchRoomAvailability]);
 
   const renderLoginModal = () => (
     <Modal visible={showLoginModal} transparent animationType="slide">
@@ -1147,7 +1287,7 @@ const HotelBooking = ({ goBack }) => {
             {selectedRoom && (
               <View style={styles.luxeSummaryCard}>
                 <Text style={styles.luxeSummaryTitle}>{selectedRoom.title}</Text>
-                
+
                 <View style={styles.luxeSummaryInfo}>
                   <View style={styles.luxeInfoRow}>
                     <Calendar size={16} color="#348f9f" />
@@ -1164,7 +1304,7 @@ const HotelBooking = ({ goBack }) => {
                 <View style={styles.luxePriceDivider} />
 
                 <View style={styles.luxePriceBreakdown}>
-                   <View style={styles.luxePriceRow}>
+                  <View style={styles.luxePriceRow}>
                     <Text style={styles.luxePriceLabel}>Grand Total</Text>
                     <Text style={styles.luxePriceValue}>₹{totalAmount.toLocaleString()}</Text>
                   </View>
@@ -1172,6 +1312,31 @@ const HotelBooking = ({ goBack }) => {
                 </View>
               </View>
             )}
+
+            <View style={styles.luxeFormSection}>
+              <Text style={styles.luxeSectionHeader}>IDENTIFICATION PROOF</Text>
+              <View style={styles.luxeFormGroup}>
+                <Text style={styles.luxeFormLabel}>AADHAR CARD PHOTO</Text>
+
+                {aadharImage ? (
+                  <View style={styles.aadharPreviewContainer}>
+                    <Image source={{ uri: aadharImage }} style={styles.aadharPreviewImage} />
+                    <TouchableOpacity style={styles.removeAadharBtn} onPress={() => setAadharImage(null)}>
+                      <Text style={styles.removeAadharText}>REMOVE</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.aadharUploadCard}
+                    onPress={handleAadharUpload}
+                  >
+                    <Camera size={24} color="#348f9f" />
+                    <Text style={styles.aadharUploadTitle}>Upload Aadhar Front</Text>
+                    <Text style={styles.aadharUploadSub}>Capture or pick from gallery</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
 
             <View style={styles.luxeFormSection}>
               <Text style={styles.luxeSectionHeader}>VISIT PURPOSE</Text>
@@ -1191,10 +1356,10 @@ const HotelBooking = ({ goBack }) => {
           </ScrollView>
 
           <View style={styles.luxeModalFooter}>
-            <TouchableOpacity 
-              style={[styles.luxeConfirmBtn, !purposeOfVisit.trim() && styles.luxeBtnDisabled]} 
+            {bookingError ? <Text style={[styles.luxeInputError, { textAlign: 'center', marginBottom: 12 }]}>{bookingError}</Text> : null}
+            <TouchableOpacity
+              style={styles.luxeConfirmBtn}
               onPress={handleProceedToPayment}
-              disabled={!purposeOfVisit.trim()}
             >
               <LinearGradient colors={['#348f9f', '#2a7a8a']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.luxeBtnGradient}>
                 <Text style={styles.luxeBtnText}>PROCEED TO PAYMENT</Text>
@@ -1206,159 +1371,7 @@ const HotelBooking = ({ goBack }) => {
     </Modal>
   );
 
-  // Modernized Luxe Payment Gateway for Hotels
-  const renderPaymentModal = () => {
-    const handleStaticPayment = () => {
-      setLocalProcessing(true);
-      
-      // Realistic high-fidelity simulation
-      setTimeout(() => {
-        setLocalProcessing(false);
-        setLocalSuccess(true);
-        
-        setTimeout(() => {
-          setShowPaymentModal(false);
-          setLocalSuccess(false);
-          
-          // Trigger the final hotel booking request
-          const method = selectedPaymentMethod === 'cod' ? 'offline' : 'online';
-          const status = selectedPaymentMethod === 'cod' ? 'pending' : 'completed';
-          hotelRequest(status, method);
-        }, 1500);
-      }, 2000);
-    };
-
-    if (localProcessing) {
-        return (
-            <Modal transparent visible={showPaymentModal} animationType="fade">
-                <View style={[styles.luxeOverlay, { justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.8)' }]}>
-                    <View style={styles.luxeProcessingCard}>
-                        <ActivityIndicator size="large" color="#348f9f" />
-                        <Text style={styles.luxeProcessingTitle}>Processing Reservation</Text>
-                        <Text style={styles.luxeProcessingSub}>Securing your premium suite...</Text>
-                    </View>
-                </View>
-            </Modal>
-        );
-    }
-
-    if (localSuccess) {
-        return (
-            <Modal transparent visible={showPaymentModal} animationType="fade">
-                <View style={[styles.luxeOverlay, { justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.8)' }]}>
-                    <View style={styles.luxeProcessingCard}>
-                        <View style={styles.luxeSuccessBadge}>
-                            <Text style={{ fontSize: 40, color: '#10B981', fontWeight: '900' }}>✓</Text>
-                        </View>
-                        <Text style={[styles.luxeProcessingTitle, { color: '#10B981' }]}>Booking Verified</Text>
-                        <Text style={styles.luxeProcessingSub}>Your Grand Residence is ready.</Text>
-                    </View>
-                </View>
-            </Modal>
-        );
-    }
-
-    return (
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showPaymentModal}
-        onRequestClose={() => setShowPaymentModal(false)}
-      >
-        <View style={styles.luxeOverlay}>
-          <TouchableOpacity
-            style={styles.luxeModalBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowPaymentModal(false)}
-          />
-          <View style={styles.luxeCheckoutCard}>
-            <View style={styles.luxeCheckoutHeader}>
-                <View style={styles.dragBar} />
-                <Text style={styles.luxeCheckoutTitle}>SECURE CHECKOUT</Text>
-            </View>
-
-            <View style={styles.luxeSummaryBox}>
-                <View style={styles.rowBetween}>
-                    <View>
-                        <Text style={styles.luxeLabel}>Suite Selected</Text>
-                        <Text style={styles.luxeValue}>{selectedRoom?.type || 'Deluxe Room'}</Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.luxeLabel}>Total Payable</Text>
-                        <Text style={styles.luxeTotalAmount}>₹{totalAmount.toLocaleString()}</Text>
-                    </View>
-                </View>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={styles.luxeSectionHeader}>PAYMENT METHOD</Text>
-                
-                <TouchableOpacity 
-                    style={[styles.luxeMethodCard, selectedPaymentMethod === 'upi' && styles.luxeMethodActive]}
-                    onPress={() => setSelectedPaymentMethod('upi')}
-                >
-                    <View style={styles.luxeIconBg}>
-                        <Text style={{ fontSize: 24 }}>📱</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.luxeMethodName}>UPI / GPay / PhonePe</Text>
-                        <Text style={styles.luxeMethodSub}>Instant bank-to-bank transfer</Text>
-                    </View>
-                    <View style={[styles.luxeDot, selectedPaymentMethod === 'upi' && styles.luxeDotActive]} />
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                    style={[styles.luxeMethodCard, selectedPaymentMethod === 'card' && styles.luxeMethodActive]}
-                    onPress={() => setSelectedPaymentMethod('card')}
-                >
-                    <View style={styles.luxeIconBg}>
-                        <Text style={{ fontSize: 24 }}>💳</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.luxeMethodName}>Credit / Debit Card</Text>
-                        <Text style={styles.luxeMethodSub}>Global payment processing</Text>
-                    </View>
-                    <View style={[styles.luxeDot, selectedPaymentMethod === 'card' && styles.luxeDotActive]} />
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                    style={[styles.luxeMethodCard, selectedPaymentMethod === 'cod' && styles.luxeMethodActive]}
-                    onPress={() => setSelectedPaymentMethod('cod')}
-                >
-                    <View style={styles.luxeIconBg}>
-                        <Text style={{ fontSize: 24 }}>🏢</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.luxeMethodName}>Pay at Hotel</Text>
-                        <Text style={styles.luxeMethodSub}>Pay on check-in day</Text>
-                    </View>
-                    <View style={[styles.luxeDot, selectedPaymentMethod === 'cod' && styles.luxeDotActive]} />
-                </TouchableOpacity>
-            </ScrollView>
-
-            <TouchableOpacity
-              style={[styles.luxePayConfirmBtn, !selectedPaymentMethod && { opacity: 0.5 }]}
-              onPress={handleStaticPayment}
-              disabled={!selectedPaymentMethod}
-            >
-              <LinearGradient
-                colors={['#348f9f', '#2a7a8a']}
-                style={styles.btnGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                  <Text style={styles.luxePayBtnText}>
-                      {selectedPaymentMethod === 'cod' ? 'CONFIRM RESERVATION' : `AUTHORIZE ₹${totalAmount.toLocaleString()}`}
-                  </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            
-            <Text style={styles.luxeSecureText}>🛡️ PCI-DSS COMPLIANT ENCRYPTION ACTIVE</Text>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
+  // The renderPaymentModal has been replaced by the shared PaymentModal component
 
   const renderUpiAppsModal = () => {
     const upiApps = [
@@ -1399,7 +1412,7 @@ const HotelBooking = ({ goBack }) => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       <View style={[styles.executiveHeader, { paddingTop: insets.top, height: 60 + insets.top }]}>
         <TouchableOpacity onPress={handleGoBack} style={styles.headerBackButton}>
           <ChevronLeft size={24} color="#348f9f" />
@@ -1418,11 +1431,11 @@ const HotelBooking = ({ goBack }) => {
           <View style={styles.luxeSearchCard}>
             <View style={styles.luxeFormField}>
               <Text style={styles.luxeLabel}>Location</Text>
-              <TextInput 
-                style={styles.luxeInput} 
-                value={location} 
-                onChangeText={setLocation} 
-                placeholder="Where to?" 
+              <TextInput
+                style={styles.luxeInput}
+                value={location}
+                onChangeText={setLocation}
+                placeholder="Where to?"
                 placeholderTextColor="#94A3B8"
               />
             </View>
@@ -1449,7 +1462,7 @@ const HotelBooking = ({ goBack }) => {
 
         {dateError && (
           <View style={styles.luxeErrorBanner}>
-             <Text style={[styles.luxeErrorText, dateError.includes('successfully') && styles.luxeSuccessText]}>
+            <Text style={[styles.luxeErrorText, dateError.includes('successfully') && styles.luxeSuccessText]}>
               {dateError}
             </Text>
           </View>
@@ -1514,21 +1527,30 @@ const HotelBooking = ({ goBack }) => {
               <View style={styles.luxePricingRow}>
                 <View>
                   <View style={styles.priceRow}>
-                    <Text style={styles.luxeCurrentPrice}>₹{room.price.toLocaleString()}</Text>
-                    <Text style={styles.luxeOriginalPrice}>₹{room.originalPrice.toLocaleString()}</Text>
+                    <Text style={styles.luxeCurrentPrice}>₹{(room.price * roomCounts[index] * nights).toLocaleString()}</Text>
+                    {roomCounts[index] > 1 || nights > 1 ? (
+                      <Text style={styles.luxeOriginalPrice}>₹{(room.originalPrice * roomCounts[index] * nights).toLocaleString()}</Text>
+                    ) : (
+                      <Text style={styles.luxeOriginalPrice}>₹{room.originalPrice.toLocaleString()}</Text>
+                    )}
                   </View>
-                  <Text style={styles.luxeTaxInfo}>+ ₹{room.taxes} TAXES & FEES</Text>
+                  <Text style={styles.luxeTaxInfo}>
+                    {roomCounts[index]} {roomCounts[index] > 1 ? 'Rooms' : 'Room'} • {nights} {nights > 1 ? 'Nights' : 'Night'}
+                  </Text>
+                  <Text style={styles.luxeTaxNoteSmall}>
+                    + ₹{Math.round(room.price * roomCounts[index] * nights * 0.12).toLocaleString()} GST (12%)
+                  </Text>
                 </View>
                 <View style={styles.luxeDiscountBadge}>
                   <Text style={styles.luxeDiscountText}>
-                    {Math.round(((room.originalPrice - room.price) / room.originalPrice) * 100)}% OFF
+                    {Math.round(((room.originalPrice * roomCounts[index] * nights - room.price * roomCounts[index] * nights) / (room.originalPrice * roomCounts[index] * nights)) * 100)}% OFF
                   </Text>
                 </View>
               </View>
 
               <View style={styles.luxeBookingControls}>
                 <View style={styles.luxeControlGroup}>
-                   <View style={styles.luxeCounterBox}>
+                  <View style={styles.luxeCounterBox}>
                     <TouchableOpacity onPress={() => decrementRoom(index)} style={styles.luxeCounterBtn}>
                       <Text style={styles.luxeCounterBtnText}>-</Text>
                     </TouchableOpacity>
@@ -1564,9 +1586,9 @@ const HotelBooking = ({ goBack }) => {
                   {isExpanded ? <ChevronUp size={18} color="#348f9f" /> : <ChevronDown size={18} color="#348f9f" />}
                 </TouchableOpacity>
 
-                <TouchableOpacity 
-                  style={[styles.luxePrimaryBtn, availableRooms === 0 && styles.luxeBtnDisabled]} 
-                  onPress={() => handleBooking(room, index)} 
+                <TouchableOpacity
+                  style={[styles.luxePrimaryBtn, availableRooms === 0 && styles.luxeBtnDisabled]}
+                  onPress={() => handleBooking(room, index)}
                   disabled={availableRooms === 0}
                 >
                   <LinearGradient colors={['#348f9f', '#2a7a8a']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.luxeBtnGradient}>
@@ -1597,20 +1619,31 @@ const HotelBooking = ({ goBack }) => {
 
       {renderLoginModal()}
       {renderBookingDetailsModal()}
-      {renderPaymentModal()}
       {renderUpiAppsModal()}
+      {isAuthenticated && (
+        <PaymentModal
+          visible={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          bookingData={{
+            totalPrice: totalAmount.toLocaleString(),
+            roomType: selectedRoom?.type
+          }}
+          user={user}
+          onPaymentSuccess={() => hotelRequest("completed", "online")}
+        />
+      )}
 
-      <DateCalendar 
-        isOpen={showCheckInCalendar} 
-        onClose={() => setShowCheckInCalendar(false)} 
-        onDateSelect={handleCheckInDateSelect} 
+      <DateCalendar
+        isOpen={showCheckInCalendar}
+        onClose={() => setShowCheckInCalendar(false)}
+        onDateSelect={handleCheckInDateSelect}
         selectedDate={checkInDate}
       />
 
-      <DateCalendar 
-        isOpen={showCheckOutCalendar} 
-        onClose={() => setShowCheckOutCalendar(false)} 
-        onDateSelect={handleCheckOutDateSelect} 
+      <DateCalendar
+        isOpen={showCheckOutCalendar}
+        onClose={() => setShowCheckOutCalendar(false)}
+        onDateSelect={handleCheckOutDateSelect}
         selectedDate={checkOutDate}
       />
 
@@ -1925,11 +1958,16 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   luxeTaxInfo: {
-    fontSize: 11,
+    fontSize: 12,
+    color: '#348f9f',
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  luxeTaxNoteSmall: {
+    fontSize: 10,
     color: '#94A3B8',
-    fontWeight: '600',
+    fontWeight: '500',
     marginTop: 2,
-    textTransform: 'uppercase',
   },
   luxeDiscountBadge: {
     backgroundColor: '#10B981',
@@ -2209,6 +2247,78 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94A3B8',
     fontWeight: '500',
+  },
+  luxeAadharInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    gap: 12,
+  },
+  luxeAadharInput: {
+    flex: 1,
+    height: 54,
+    fontSize: 18,
+    color: '#1E293B',
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
+  aadharUploadCard: {
+    height: 120,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#348f9f',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  aadharUploadTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  aadharUploadSub: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  aadharPreviewContainer: {
+    position: 'relative',
+    height: 180,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#F1F5F9',
+  },
+  aadharPreviewImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  removeAadharBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(244, 63, 94, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  removeAadharText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  luxeInputError: {
+    color: '#F43F5E',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+    marginLeft: 4,
   },
   luxeFormSection: { marginBottom: 24 },
   luxeSectionHeader: {

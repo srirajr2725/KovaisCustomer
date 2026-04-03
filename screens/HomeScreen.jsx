@@ -134,13 +134,6 @@ const offersData = [
 
 const services = [
   {
-    title: 'Unisex Parlour',
-    description: '24 Hours Doorstep unisex grooming & wellness.',
-    image: 'https://images.pexels.com/photos/331989/pexels-photo-331989.jpeg',
-    icon: User,
-    color: '#348f9f'
-  },
-  {
     title: 'Barber Shop',
     description: '24 Hours Doorstep professional master barbers.',
     image: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?q=80&w=2074&auto=format&fit=crop',

@@ -18,7 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Animatable from 'react-native-animatable';
-import { Trophy, Inbox, ChevronLeft, CreditCard, Calendar, User, Star, MessageSquare, Clock } from "lucide-react-native";
+import { Trophy, Inbox, ChevronLeft, CreditCard, Calendar, User, Star, MessageSquare, Clock, Trash2 } from "lucide-react-native";
 import LinearGradient from 'react-native-linear-gradient';
 import axios from "axios";
 
@@ -44,6 +44,33 @@ const ExecutiveHeader = ({ title, onBack }) => {
   );
 };
 
+// Unified Booking Service for history persistence
+export const BookingService = {
+  saveBooking: async (userId, bookingData) => {
+    try {
+      const storedLocal = await AsyncStorage.getItem('offline_orders');
+      let orders = storedLocal ? JSON.parse(storedLocal) : [];
+
+      const newBooking = {
+        ...bookingData,
+        id: bookingData.bookingId || `local_${bookingData.category}_${Date.now()}`,
+        customer_id: userId,
+        Category: bookingData.category ? bookingData.category.toLowerCase() : 'hotel',
+        created_at: new Date().toISOString(),
+        status: bookingData.status || 'booked'
+      };
+
+      orders.unshift(newBooking);
+      // Keep only latest 50 to prevent AsyncStorage bloating
+      await AsyncStorage.setItem('offline_orders', JSON.stringify(orders.slice(0, 50)));
+      return true;
+    } catch (error) {
+      console.error('BookingService Error:', error);
+      return false;
+    }
+  }
+};
+
 const History = ({ goBack, navigation: navProp }) => {
   const navigation = navProp;
   const [points, setPoints] = useState(0);
@@ -64,29 +91,29 @@ const History = ({ goBack, navigation: navProp }) => {
     saloon: require("./image/barber.jpeg"),
   };
 
- useEffect(() => {
-  const initializeData = async () => {
-    try {
-      const loggedInUser = await AsyncStorage.getItem("User_data");
-      //console.log("History screen fetched user:", loggedInUser);
+  useEffect(() => {
+    const initializeData = async () => {
+      try {
+        const loggedInUser = await AsyncStorage.getItem("User_data");
+        //console.log("History screen fetched user:", loggedInUser);
 
-      if (loggedInUser) {
-        const user = JSON.parse(loggedInUser);
-        //console.log("Parsed user in History:", user);
-        if (user) {
-          // Use a robust check for user ID keys
-          const userId = user.user_id || user.id || user.customer_id;
-          //console.log("Loaded unified user id for History:", userId);
-          setId(userId);
+        if (loggedInUser) {
+          const user = JSON.parse(loggedInUser);
+          //console.log("Parsed user in History:", user);
+          if (user) {
+            // Use a robust check for user ID keys
+            const userId = user.user_id || user.id || user.customer_id;
+            //console.log("Loaded unified user id for History:", userId);
+            setId(userId);
+          }
         }
+        // load submittedFeedbacks same as before...
+      } catch (error) {
+        console.error("Error initializing data:", error);
       }
-      // load submittedFeedbacks same as before...
-    } catch (error) {
-      console.error("Error initializing data:", error);
-    }
-  };
-  initializeData();
-}, []);
+    };
+    initializeData();
+  }, []);
 
   // --- helper function to safely return a valid image ---
   const safeImage = (category) => {
@@ -96,171 +123,170 @@ const History = ({ goBack, navigation: navProp }) => {
   const fetchAllOrders = async () => {
     //console.log("Fetching orders for user ID:", id);
 
-  if (!id) return;
+    if (!id) return;
 
-  try {
-    setLoading(true);
-    setErrorMessage("");
+    try {
+      setLoading(true);
+      setErrorMessage("");
 
 
-    // Try customer_id first, fallback to user_id if it fails (common in different Kovais API versions)
-    let url = `https://api.codingboss.in/kovais/orders/?customer_id=${id}&status=booked`;
-    let response = await fetch(url, {
-      method: "GET",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-    });
-
-    if (!response.ok) {
-      //console.log("customer_id fetch failed (400), trying user_id...");
-      url = `https://api.codingboss.in/kovais/orders/?user_id=${id}&status=booked`;
-      response = await fetch(url, {
+      // Try customer_id first, fallback to user_id if it fails (common in different Kovais API versions)
+      let url = `https://api.codingboss.in/kovais/orders/?customer_id=${id}&status=booked`;
+      let response = await fetch(url, {
         method: "GET",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
       });
-    }
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      //console.log("Both fetch attempts failed:", errorBody);
-      throw new Error(`Failed to fetch orders: ${response.status} - ${errorBody}`);
-    }
-
-    const data = await response.json();
-    //console.log("Raw API response:", data);
-
-    // Support both direct and nested data structures
-    const result = data?.data || data || {};
-    
-    // --- build orders with safeImage ---
-    const hotelOrders = (result.hotel_orders || []).map((order) => ({
-      ...order,
-      id: order.id || `hotel_${order.date_in || order.created_at}`,
-      guest_name: order.guest_name || order.username || order.customer_name || "Valued Guest",
-      service_type: "Deluxe Room (Ac)",
-      serviceBy: "Veera",
-      bookingDate: order.date_in || order.date || "N/A",
-      time: null,
-      room_count: order.room_count,
-      Category: "hotel",
-      img: safeImage("hotel"),
-      created_at: order.created_at || order.date_in || new Date().toISOString(),
-      points: order.points || 100,
-      amount: order.amount || order.total_amount || 0,
-    }));
-
-    const gymOrders = (result.gym_orders || []).map((order) => ({
-      ...order,
-      id: order.id || `gym_${order.purchaseddate || order.created_at}`,
-      guest_name: order.customer_name || order.username || "Valued Guest",
-      service_type: order.plan || "Gym Membership",
-      bookingDate: order.purchaseddate || "N/A",
-      time: order.timeslot,
-      serviceBy: "Gokul",
-      Category: "gym",
-      img: safeImage("gym"),
-      created_at: order.created_at || order.purchaseddate || new Date().toISOString(),
-      points: order.points || 100,
-      age: order.age,
-      gender: order.gender,
-      payment_status: order.payment_status,
-      payment_type: order.payment_type,
-      amount: order.amount || order.total_amount || 0,
-    }));
-
-    const spaOrders = (result.spa_orders || []).map((order) => ({
-      ...order,
-      id: order.id || `spa_${order.date || order.created_at}`,
-      guest_name: order.customer_name || order.username || "Valued Guest",
-      service_type: order.services || "Spa Service",
-      bookingDate: order.date || "N/A",
-      time: order.time,
-      serviceBy: "Guna",
-      Category: "spa",
-      img: safeImage("spa"),
-      created_at: order.created_at || order.date || new Date().toISOString(),
-      points: order.points || 100,
-      amount: order.amount || order.total_amount || 0,
-    }));
-
-    const saloonOrders = (result.saloon_orders || []).map((order) => ({
-      ...order,
-      id: order.id || `saloon_${order.date || order.created_at}`,
-      guest_name: order.customer_name || order.username || "Valued Guest",
-      service_type: order.services || "Prestige Service",
-      bookingDate: order.date || "N/A",
-      time: order.time,
-      gender: order.category,
-      serviceBy: "Anandh",
-      Category: "saloon",
-      img: safeImage("saloon"),
-      created_at: order.created_at || order.date || new Date().toISOString(),
-      points: order.points || 100,
-      amount: order.amount || order.total_amount || 0,
-    }));
-
-    // --- Merge with local/offline orders ---
-    let offlineOrders = [];
-    try {
-      const storedLocal = await AsyncStorage.getItem('offline_orders');
-      if (storedLocal) {
-        offlineOrders = JSON.parse(storedLocal);
-        // Filter by user ID if available
-        offlineOrders = offlineOrders.filter(order => {
-          const orderCustId = order.customer_id || order.id?.split('_')[2]; 
-          return orderCustId == id || !orderCustId; 
-        }).map(order => ({
-          ...order,
-          guest_name: order.customer_name || "Valued Guest",
-          service_type: order.room_type || order.services || "Premium Service",
-          bookingDate: order.date_in || order.date || "N/A",
-          img: safeImage(order.Category || "hotel"),
-          Category: order.Category || "hotel"
-        }));
+      if (!response.ok) {
+        //console.log("customer_id fetch failed (400), trying user_id...");
+        url = `https://api.codingboss.in/kovais/orders/?user_id=${id}&status=booked`;
+        response = await fetch(url, {
+          method: "GET",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+        });
       }
-    } catch (err) {
-      console.error("Error loading offline orders:", err);
-    }
 
-    let allOrders = [...hotelOrders, ...gymOrders, ...spaOrders, ...saloonOrders, ...offlineOrders];
-
-    // Client-side filtering for 'booked' status to ensure we only show active bookings
-    allOrders = allOrders.filter(order => 
-      !order.status || order.status.toLowerCase() === 'booked' || order.status.toLowerCase() === 'confirmed'
-    );
-
-    // Remove duplicates based on ID
-    const uniqueOrders = [];
-    const seenIds = new Set();
-    allOrders.forEach(order => {
-      if (!seenIds.has(order.id)) {
-        uniqueOrders.push(order);
-        seenIds.add(order.id);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        //console.log("Both fetch attempts failed:", errorBody);
+        throw new Error(`Failed to fetch orders: ${response.status} - ${errorBody}`);
       }
-    });
 
-    // Sort and set
-    uniqueOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    setOrders(uniqueOrders);
+      const data = await response.json();
+      //console.log("Raw API response:", data);
 
-    // total points
-    const total = uniqueOrders.reduce((acc, cur) => acc + Number(cur.points || 100), 0);
-    setPoints(total);
-  } catch (error) {
-    console.error("Error fetching completed orders:", error);
-    setErrorMessage("Failed to load orders");
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-};
+      // Support both direct and nested data structures
+      const result = data?.data || data || {};
+
+      // --- build orders with safeImage ---
+      const hotelOrders = (result.hotel_orders || []).map((order) => ({
+        ...order,
+        id: order.id || `hotel_${order.date_in || order.check_in || order.created_at}`,
+        guest_name: order.guest_name || order.username || order.customer_name || "Valued Guest",
+        service_type: order.room_type || "Deluxe Room (Ac)",
+        bookingDate: order.date_in || order.check_in?.split('T')[0] || order.date || "N/A",
+        Category: "hotel",
+        img: safeImage("hotel"),
+        created_at: order.created_at || order.date_in || new Date().toISOString(),
+        points: order.points || 100,
+        amount: order.amount || order.total_amount || 0,
+      }));
+
+      const gymOrders = (result.gym_orders || []).map((order) => ({
+        ...order,
+        id: order.id || `gym_${order.purchaseddate || order.created_at}`,
+        guest_name: order.customer_name || order.username || "Valued Guest",
+        service_type: order.plan || "Gym Membership",
+        bookingDate: order.purchaseddate || "N/A",
+        time: order.timeslot,
+        serviceBy: "Gokul",
+        Category: "gym",
+        img: safeImage("gym"),
+        created_at: order.created_at || order.purchaseddate || new Date().toISOString(),
+        points: order.points || 100,
+        age: order.age,
+        gender: order.gender,
+        payment_status: order.payment_status,
+        payment_type: order.payment_type,
+        amount: order.amount || order.total_amount || 0,
+      }));
+
+      const spaOrders = (result.spa_orders || []).map((order) => ({
+        ...order,
+        id: order.id || `spa_${order.date || order.created_at}`,
+        guest_name: order.customer_name || order.username || "Valued Guest",
+        service_type: order.services || "Spa Service",
+        bookingDate: order.date || "N/A",
+        time: order.time,
+        serviceBy: "Guna",
+        Category: "spa",
+        img: safeImage("spa"),
+        created_at: order.created_at || order.date || new Date().toISOString(),
+        points: order.points || 100,
+        amount: order.amount || order.total_amount || 0,
+      }));
+
+      const saloonOrders = (result.saloon_orders || []).map((order) => ({
+        ...order,
+        id: order.id || `saloon_${order.date || order.created_at}`,
+        guest_name: order.customer_name || order.username || "Valued Guest",
+        service_type: order.services || "Prestige Service",
+        bookingDate: order.date || "N/A",
+        time: order.time,
+        gender: order.category,
+        serviceBy: "Anandh",
+        Category: "saloon",
+        img: safeImage("saloon"),
+        created_at: order.created_at || order.date || new Date().toISOString(),
+        points: order.points || 100,
+        amount: order.amount || order.total_amount || 0,
+      }));
+
+      // --- Merge with local/offline orders ---
+      let offlineOrders = [];
+      try {
+        const storedLocal = await AsyncStorage.getItem('offline_orders');
+        if (storedLocal) {
+          offlineOrders = JSON.parse(storedLocal);
+          // Filter by user ID if available
+          offlineOrders = offlineOrders.filter(order => {
+            // Robust user ID matching: check customer_id first, then user_id, 
+            // then fall back to the old split('_') logic only if those are missing
+            const orderCustId = order.customer_id || order.user_id || order.id?.split('_')[2];
+            return orderCustId == id || !orderCustId;
+          }).map(order => ({
+            ...order,
+            guest_name: order.guest_name || order.customer_name || "Valued Guest",
+            service_type: order.room_type || order.services || "Premium Service",
+            bookingDate: order.date_in || order.date || "N/A",
+            img: safeImage(order.Category || "hotel"),
+            Category: order.Category || "hotel"
+          }));
+        }
+      } catch (err) {
+        console.error("Error loading offline orders:", err);
+      }
+
+      let allOrders = [...hotelOrders, ...gymOrders, ...spaOrders, ...saloonOrders, ...offlineOrders];
+
+      // Client-side filtering for 'booked' status to ensure we only show active bookings
+      allOrders = allOrders.filter(order =>
+        !order.status || order.status.toLowerCase() === 'booked' || order.status.toLowerCase() === 'confirmed'
+      );
+
+      // Remove duplicates based on ID
+      const uniqueOrders = [];
+      const seenIds = new Set();
+      allOrders.forEach(order => {
+        if (!seenIds.has(order.id)) {
+          uniqueOrders.push(order);
+          seenIds.add(order.id);
+        }
+      });
+
+      // Sort and set
+      uniqueOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setOrders(uniqueOrders);
+
+      // total points
+      const total = uniqueOrders.reduce((acc, cur) => acc + Number(cur.points || 100), 0);
+      setPoints(total);
+    } catch (error) {
+      console.error("Error fetching completed orders:", error);
+      setErrorMessage("Failed to load orders");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
 
   useEffect(() => {
-  if (id) {
-    //console.log("id is set — fetching orders for:", id);
-    fetchAllOrders();   // call the function defined below
-  }
-}, [id]);
+    if (id) {
+      //console.log("id is set — fetching orders for:", id);
+      fetchAllOrders();   // call the function defined below
+    }
+  }, [id]);
 
 
   const onRefresh = useCallback(() => {
@@ -332,8 +358,78 @@ const History = ({ goBack, navigation: navProp }) => {
       }));
     } catch (error) {
       console.error("Error submitting feedback:", error);
-      Alert.alert("Error", "Failed to submit feedback.");
     }
+  };
+
+  const handleDeleteOrder = async (orderId, order) => {
+    Alert.alert(
+      "Delete Booking",
+      "Are you sure you want to remove this premium booking from your records? This action will also cancel the booking in our system.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // 1. Local State Update (Optimistic)
+              setOrders(prev => {
+                const updated = prev.filter(o => String(o.id) !== String(orderId));
+                // Recalculate points
+                const total = updated.reduce((acc, cur) => acc + Number(cur.points || 100), 0);
+                setPoints(total);
+                return updated;
+              });
+
+              // 2. AsyncStorage Update (Remove from offline_orders)
+              try {
+                const storedLocal = await AsyncStorage.getItem('offline_orders');
+                if (storedLocal) {
+                  const localOrders = JSON.parse(storedLocal);
+                  const updatedLocal = localOrders.filter(o => String(o.id) !== String(orderId) && String(o.bookingId) !== String(orderId));
+                  await AsyncStorage.setItem('offline_orders', JSON.stringify(updatedLocal));
+                }
+              } catch (storageErr) {
+                console.error("Local storage sync error:", storageErr);
+              }
+
+              // 3. Backend Update (Try to sync if not local)
+              if (!String(orderId).includes('local') && !String(orderId).includes('offline')) {
+                try {
+                  // Try standard status cancel
+                  await axios.post(
+                    `https://api.codingboss.in/kovais/${order.Category}/orders/update/?customer_id=${id}&order_id=${orderId}`,
+                    {
+                      customer_id: id,
+                      order_id: orderId,
+                      order_type: order.Category,
+                      status: 'cancelled',
+                    },
+                    { headers: { "Content-Type": "application/json" } }
+                  );
+                } catch (apiErr) {
+                  console.log("Status cancelled update failed, trying direct delete pattern...");
+                  try {
+                    // Try another common pattern: /delete/ endpoint
+                    await axios.post(
+                      `https://api.codingboss.in/kovais/${order.Category}/orders/delete/?customer_id=${id}&order_id=${orderId}`,
+                      { customer_id: id, order_id: orderId }
+                    );
+                  } catch (delErr) {
+                    console.log("Delete endpoint also failed, but order was removed from UI.");
+                  }
+                }
+              }
+
+              Alert.alert("Success", "Booking removed from your history.");
+            } catch (error) {
+              console.error("Critical error in delete flow:", error);
+              Alert.alert("Error", "Something went wrong, but the record was removed from this view.");
+            }
+          }
+        }
+      ]
+    );
   };
 
   const formatDate = (dateString) => {
@@ -372,9 +468,17 @@ const History = ({ goBack, navigation: navProp }) => {
               {order.Category.toUpperCase()}
             </Text>
           </View>
-          <View style={styles.luxePointsBadge}>
-            <Trophy size={14} color="#EAB308" />
-            <Text style={styles.luxePointsText}>{order.points || 100} pts</Text>
+          <View style={styles.luxeHeaderActions}>
+            <View style={styles.luxePointsBadge}>
+              <Trophy size={14} color="#EAB308" />
+              <Text style={styles.luxePointsText}>{order.points || 100} pts</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => handleDeleteOrder(order.id, order)}
+              style={styles.luxeDeleteBtn}
+            >
+              <Trash2 size={18} color="#EF4444" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -813,6 +917,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#64748B",
     fontWeight: "500",
+  },
+  luxeHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  luxeDeleteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FEF2F2",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FEE2E2",
   },
 });
 

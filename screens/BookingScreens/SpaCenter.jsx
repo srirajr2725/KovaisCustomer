@@ -20,19 +20,19 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { 
-  ArrowLeft, 
-  Check, 
-  Star, 
-  Clock, 
-  MapPin, 
-  User, 
-  Bookmark, 
-  ChevronLeft, 
-  ChevronRight, 
-  Calendar as CalendarIcon, 
-  Sparkles, 
-  Heart, 
+import {
+  ArrowLeft,
+  Check,
+  Star,
+  Clock,
+  MapPin,
+  User,
+  Bookmark,
+  ChevronLeft,
+  ChevronRight,
+  Calendar as CalendarIcon,
+  Sparkles,
+  Heart,
   Award,
   ChevronUp,
   ChevronDown,
@@ -621,6 +621,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
       const doorstepCharge = location === 'doorstep' ? 300 : 0;
       const finalAmount = (amount || selectedServices.reduce((sum, s) => sum + s.amount, 0)) + doorstepCharge;
 
+      const userPhone = user?.phone || user?.mobile || user?.customer_phone || user?.contact || '';
       const data = {
         category: selectedGender,
         services: selectedServices.map(s => s.name).join(", "),
@@ -634,6 +635,13 @@ const SpaBooking = ({ onGoBack, goBack }) => {
         customer_id: userId,
         status: 'booked',
         customer_name: user?.name || user?.username || user?.data?.name || 'Guest',
+        customer_phone: userPhone,
+        mobile: userPhone,
+        phone: userPhone,
+        mobile_no: userPhone,
+        phone_number: userPhone,
+        contact: userPhone,
+        contact_number: userPhone,
         points: usedPoints
       };
 
@@ -651,7 +659,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
 
       const orderData = response.data || {};
       const orderId = orderData.order?.id || orderData.id || orderData.data?.id || 'SPA-' + Math.floor(Math.random() * 100000);
-      
+
       // Save for local history fallback
       try {
         const localOrders = await AsyncStorage.getItem('offline_orders');
@@ -685,7 +693,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
       const errorMessage = error.response?.data?.message ||
         error.response?.data?.error ||
         'Booking failed. Please try again';
-      
+
       // Fallback instead of just error to ensure "booking" happens
       const mockOrderId = `SPA-${Math.floor(Math.random() * 900000 + 100000)}`;
       try {
@@ -817,7 +825,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
           <ScrollView style={styles.luxeModalContent}>
             <View style={styles.luxeSummaryCard}>
               <Text style={styles.luxeSummaryTitle}>Spa Selection</Text>
-              
+
               <View style={styles.luxeSummaryInfo}>
                 <View style={styles.luxeInfoRow}>
                   <CalendarIcon size={16} color="#348f9f" />
@@ -870,8 +878,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
           </ScrollView>
 
           <View style={styles.luxeModalFooter}>
-            <TouchableOpacity 
-              style={styles.luxeConfirmBtn} 
+            <TouchableOpacity
+              style={styles.luxeConfirmBtn}
               onPress={() => { setShowModal(false); setShowPaymentModal(true); }}
             >
               <View style={styles.luxeBtnGradient}>
@@ -909,8 +917,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
 
             <ScrollView style={styles.luxeModalContent}>
               {paymentMethods.map(method => (
-                <TouchableOpacity 
-                  key={method.id} 
+                <TouchableOpacity
+                  key={method.id}
                   style={[styles.luxePaymentBtn, selectedPaymentMethod === method.id && styles.luxePaymentBtnActive]}
                   onPress={() => setSelectedPaymentMethod(method.id)}
                 >
@@ -929,8 +937,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
             </ScrollView>
 
             <View style={styles.luxeModalFooter}>
-              <TouchableOpacity 
-                style={[styles.luxeConfirmBtn, !selectedPaymentMethod && styles.luxeBtnDisabled]} 
+              <TouchableOpacity
+                style={[styles.luxeConfirmBtn, !selectedPaymentMethod && styles.luxeBtnDisabled]}
                 onPress={() => {
                   if (selectedPaymentMethod === 'upi') {
                     setShowPaymentModal(false);
@@ -973,8 +981,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
 
             <View style={styles.luxeUpiList}>
               {upiApps.map(app => (
-                <TouchableOpacity 
-                  key={app.id} 
+                <TouchableOpacity
+                  key={app.id}
                   style={styles.luxeUpiBtn}
                   onPress={() => { setShowUpiAppsModal(false); initiateUpiPayment(app.id); }}
                 >
@@ -999,7 +1007,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
   return (
     <SafeAreaView style={styles.luxeMainContainer}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       {/* EXECUTIVE HEADER */}
       <View style={[styles.luxeExecutiveHeader, { paddingTop: insets.top }]}>
         <View style={styles.luxeHeaderGradient}>
@@ -1021,8 +1029,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
       <ScrollView style={styles.luxeContent} showsVerticalScrollIndicator={false}>
         {/* HERO SECTION */}
         <View style={styles.luxeHeroSection}>
-          <Image 
-            source={{ uri: carouselImages[0].uri }} 
+          <Image
+            source={{ uri: carouselImages[0].uri }}
             style={styles.luxeHeroImage}
           />
           <View style={styles.luxeHeroOverlay} />
@@ -1056,9 +1064,9 @@ const SpaBooking = ({ onGoBack, goBack }) => {
           {location === 'doorstep' && (
             <View style={styles.luxeAddressContainer}>
               <Text style={styles.luxeFormLabel}>DOORSTEP ADDRESS</Text>
-              <TextInput 
-                style={styles.luxeAddressInput} 
-                placeholder="Enter your address for 24h service" 
+              <TextInput
+                style={styles.luxeAddressInput}
+                placeholder="Enter your address for 24h service"
                 placeholderTextColor="#94A3B8"
                 multiline
                 value={value}
@@ -1133,7 +1141,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
               <Text style={styles.luxeSectionTitle}>APPOINTMENT DETAILS</Text>
               <Clock size={16} color="#348f9f" />
             </View>
-            
+
             <TouchableOpacity onPress={() => setShowPicker(true)} style={styles.luxeDateSelector}>
               <CalendarIcon size={20} color="#348f9f" />
               <Text style={styles.luxeDateText}>
@@ -1196,7 +1204,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
       {renderUpiAppsModal()}
       {renderLoginModal()}
       <LoadingOverlay />
-      
+
       {/* CUSTOM POPUP */}
       <CustomPopup
         visible={popup.visible}
@@ -1932,7 +1940,7 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontWeight: '600',
   },
-  
+
   // Custom Popup Styles
   popupOverlay: {
     flex: 1,
