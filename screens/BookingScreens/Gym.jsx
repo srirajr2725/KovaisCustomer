@@ -25,6 +25,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import axios from 'axios';
 import { useAuth } from '../AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import * as Animatable from 'react-native-animatable';
 
 const { width, height } = Dimensions.get('window');
 const MODAL_HEIGHT = height * 0.85;
@@ -36,6 +37,23 @@ const Gym = ({ goBack }) => {
   const { user, isAuthenticated, login: authLogin, logout: authLogout, updatePoints } = useAuth();
   const navigation = useNavigation();
   const [points, setPoints] = useState(user?.points || 0);
+
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    email: '',
+  });
+
+  useEffect(() => {
+    if (user) {
+      const userPhone = user.phone || user.mobile || user.customer_phone || user.contact || (/^\d{10}$/.test(user.username) ? user.username : '') || '';
+      setFormData({
+        name: user.name || user.username || '',
+        phone: userPhone,
+        email: user.email || ''
+      });
+    }
+  }, [user]);
 
   const [selectedGender, setSelectedGender] = useState('');
   const [selectedAge, setSelectedAge] = useState('');
@@ -57,6 +75,7 @@ const Gym = ({ goBack }) => {
   // New states for enhanced payment modal
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showUpiAppsModal, setShowUpiAppsModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
 
   const [pointsError, setPointsError] = useState('');
@@ -165,6 +184,15 @@ const Gym = ({ goBack }) => {
   const isProceedEnabled =
     selectedGender && selectedAge && selectedAmount && selectedTime && plan;
 
+  const formatDate = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const getUserId = () => {
     if (!user) return null;
     return user.user_id || user.id || user.customer_id || null;
@@ -236,12 +264,25 @@ const Gym = ({ goBack }) => {
   const handlePayment = useCallback(() => {
     if (isAuthenticated && selectedTime) {
       setShowLoginModal(false);
-      setShowPaymentModal(true); // Open new payment modal
+      setShowModal(true); // Open confirmation modal first
     } else {
       setShowLoginModal(true);
-      setShowPaymentModal(false);
+      setShowModal(false);
     }
   }, [isAuthenticated, selectedTime]);
+
+  const handleProceedToPayment = () => {
+    // ✅ Extract reliable phone for validation
+    const phoneToCheck = formData.phone || user?.phone || user?.mobile || user?.customer_phone || user?.contact || (/^\d{10}$/.test(user?.username) ? user.username : '');
+    
+    if (!/^\d{10}$/.test(phoneToCheck)) {
+      setBookingError('Please enter a valid 10-digit mobile number in the Mobile Number field above.');
+      return;
+    }
+    setBookingError('');
+    setShowModal(false);
+    setShowPaymentModal(true);
+  };
 
   const handleUsePoints = useCallback(() => {
     const pointsToUse = parseInt(value);
@@ -475,57 +516,61 @@ const Gym = ({ goBack }) => {
       }
 
       const info = consolidateUserInfo(user);
-      const data = {
-        gender: selectedGender,
-        age: selectedAge,
+      const reliablePhone = formData.phone || user?.phone || user?.data?.phone || user?.mobile || user?.data?.mobile || user?.customer_phone || user?.data?.customer_phone || user?.contact || user?.data?.contact || (user?.username && /^\d{10}/.test(user.username) ? user.username.match(/^\d{10}/)[0] : '') || '';
+
+      const payload = {
+        // 💎 THE "CATEGORY" IS THE ONLY FIELD THE ADMIN PANEL DISPLAYS ACCURATELY
+        // We will stuff EVERYTHING into it to ensure the admin sees it.
+        category: `${selectedGender === 'Men' ? 'Gents' : 'Ladies'} | PH: ${reliablePhone} | DT: ${formatDate(selectedDate)} @ ${selectedTime}`, 
+        
+        services: `Gym Plan: ${plan} | Date: ${formatDate(selectedDate)} | Time: ${selectedTime} | CALL: ${reliablePhone} | Loc: At Gym Studio`,
+        service: `Gym Plan: ${plan}`, // Singular redundancy
         amount: selectedAmount,
-        plan: plan,
-        payment_status: paymentStatus,
-        payment_type: paymentType,
-        payment_method: selectedPaymentMethod || 'Cash',
-        timeslot: selectedTime,
-        purchaseddate: selectedDate.toISOString(),
-        status: bookedStatus,
+        date: formatDate(selectedDate),
+        time: selectedTime,
+
+        payment_status: 'Completed', // Barber Pattern
+        payment_type: paymentType || 'Cash',
         customer_id: userId,
-        username: info.name || info.username || '',
+        status: 'booked',
+        customer_name: `${user?.username || info.name || 'Guest'} - ${reliablePhone}`,
+        phone: reliablePhone,
         points: usedPoints,
+        mobile: reliablePhone,
+        mobile_no: reliablePhone,
+        phone_number: reliablePhone,
+        mobile_number: reliablePhone,
+        contact: reliablePhone,
+        contact_number: reliablePhone,
+        customer_phone: reliablePhone,
+        customer_mobile: reliablePhone,
+        customer_contact: reliablePhone,
+        customer_mobile_number: reliablePhone,
+        customer_phone_number: reliablePhone,
+        registrator_phone: reliablePhone,
+        registrator_mobile: reliablePhone,
+        logged_phone: reliablePhone,
+
+        // Safety context
+        Category: 'gym',
+        order_type: 'Gym Membership',
+        user_id: userId,
+        user: userId,
       };
 
-      //console.log('Booking request:', data);
+      //console.log('Booking request:', payload);
 
       const response = await axios.post(
         'https://api.codingboss.in/kovais/gym/orders/',
-        data,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-        },
+        payload
       );
 
       //console.log('Booking successful:', response.data);
 
       setBookingSuccess('Membership confirmed! Your membership has been activated.');
       setBookingError('');
-
-      Alert.alert(
-        'Success',
-        'Membership confirmed! Your membership has been activated.',
-        [{
-          text: 'OK',
-          onPress: () => {
-            setSelectedGender('');
-            setSelectedAge('');
-            setSelectedAmount('');
-            setSelectedTime('');
-            setPlan('');
-            setUsedPoints(0);
-            setSelectedPaymentMethod(null);
-            setBookingSuccess('');
-          }
-        }]
-      );
+      setLoading(false);
+      setShowSuccessModal(true); // Replace standard Alert with premium UI
 
     } catch (error) {
       console.error('Booking error:', error.response?.data || error);
@@ -545,14 +590,14 @@ const Gym = ({ goBack }) => {
     setTimeout(() => {
       gymRequest('completed', 'online');
     }, 300);
-  }, [selectedGender, selectedAge, selectedAmount, selectedTime, plan, selectedDate, bookedStatus, usedPoints, user]);
+  }, [selectedGender, selectedAge, selectedAmount, selectedTime, plan, selectedDate, bookedStatus, usedPoints, user, formData]);
 
   const handleFreeService = useCallback(() => {
     handleCloseModal();
     setTimeout(() => {
       gymRequest('pending', 'offline');
     }, 300);
-  }, [selectedGender, selectedAge, selectedAmount, selectedTime, plan, selectedDate, bookedStatus, usedPoints, user]);
+  }, [selectedGender, selectedAge, selectedAmount, selectedTime, plan, selectedDate, bookedStatus, usedPoints, user, formData]);
 
   // Enhanced Payment Modal (from Barber component)
   const renderPaymentModal = () => {
@@ -1090,7 +1135,7 @@ const Gym = ({ goBack }) => {
                   <View style={styles.inputContainer}>
                     <TextInput
                       style={styles.input}
-                      placeholder="Username"
+                      placeholder="Mobile Number / Username"
                       placeholderTextColor="#b0aeaeff"
                       value={userData.username}
                       onChangeText={text =>
@@ -1162,6 +1207,119 @@ const Gym = ({ goBack }) => {
     [showLoginModal, isNewUser, userData, errorMessage, bookingSuccess, loading, showPassword],
   );
 
+  const renderSuccessModal = () => (
+    <Modal visible={showSuccessModal} transparent animationType="fade">
+      <View style={styles.successOverlay}>
+        <Animatable.View animation="zoomIn" duration={500} style={styles.successCard}>
+          <LinearGradient colors={['#348f9f', '#2a7a88']} style={styles.successIconContainer}>
+            <CheckCircle size={50} color="#FFFFFF" strokeWidth={3} />
+          </LinearGradient>
+          
+          <Text style={styles.successTitle}>Booking Confirmed!</Text>
+          <Text style={styles.successSubtitle}>Welcome to Kovais Gym family</Text>
+          
+          <View style={styles.successDetailsCard}>
+            <View style={styles.successDetailRow}>
+              <Text style={styles.successDetailLabel}>Membership:</Text>
+              <Text style={styles.successDetailValue}>{plan}</Text>
+            </View>
+            <View style={styles.successDetailRow}>
+              <Text style={styles.successDetailLabel}>Amount Paid:</Text>
+              <Text style={styles.successDetailAmount}>₹{selectedAmount}</Text>
+            </View>
+            <View style={styles.successDetailRow}>
+              <Text style={styles.successDetailLabel}>Booking Date:</Text>
+              <Text style={styles.successDetailValue}>{formatDate(selectedDate)}</Text>
+            </View>
+            <View style={styles.successDetailRow}>
+              <Text style={styles.successDetailLabel}>Start Time:</Text>
+              <Text style={styles.successDetailValue}>{selectedTime}</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity 
+            style={styles.successFinishBtn}
+            onPress={() => {
+              setShowSuccessModal(false);
+              setSelectedGender('');
+              setSelectedAge('');
+              setSelectedAmount('');
+              setSelectedTime('');
+              setPlan('');
+              setUsedPoints(0);
+              setSelectedPaymentMethod(null);
+              setBookingSuccess('');
+            }}
+          >
+            <LinearGradient colors={['#348f9f', '#2a7a88']} style={styles.successFinishGradient}>
+              <Text style={styles.successFinishText}>GET STARTED</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animatable.View>
+      </View>
+    </Modal>
+  );
+
+  const renderBookingDetailsModal = () => (
+    <Modal visible={showModal} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowModal(false)} />
+        <View style={styles.paymentModalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>CONFIRM BOOKING</Text>
+            <TouchableOpacity onPress={() => setShowModal(false)}>
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={{ padding: 20 }}>
+            <View style={styles.paymentSummary}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Plan Selected:</Text>
+                <Text style={styles.summaryValue}>{plan}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Price:</Text>
+                <Text style={styles.summaryAmount}>₹{selectedAmount}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Time Slot:</Text>
+                <Text style={styles.summaryValue}>{selectedTime}</Text>
+              </View>
+            </View>
+
+            <View style={{ marginTop: 20 }}>
+              <Text style={styles.sectionTitle}>CONFIRM CONTACT DETAILS</Text>
+              <View style={styles.inputContainer}>
+                <Text style={[styles.summaryLabel, { marginBottom: 8 }]}>MOBILE NUMBER</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: '#F8FAFC' }]}
+                  placeholder="Enter 10-digit mobile number"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  maxLength={10}
+                  value={formData.phone}
+                  onChangeText={(text) => setFormData({ ...formData, phone: text })}
+                />
+              </View>
+            </View>
+            
+            {bookingError ? <Text style={{ color: '#dc3545', textAlign: 'center', marginTop: 10 }}>{bookingError}</Text> : null}
+          </ScrollView>
+
+          <View style={styles.paymentModalFooter}>
+            <TouchableOpacity
+              style={styles.confirmPaymentButton}
+              onPress={handleProceedToPayment}
+            >
+              <Text style={styles.confirmPaymentButtonText}>PROCEED TO PAYMENT</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Standardized Modern Header */}
@@ -1183,8 +1341,10 @@ const Gym = ({ goBack }) => {
         {renderCTA()}
       </ScrollView>
 
+      {renderBookingDetailsModal()}
       {renderPaymentModal()}
       {renderUpiAppsModal()}
+      {renderSuccessModal()}
       {LoginModal}
     </SafeAreaView>
   );
@@ -1725,6 +1885,99 @@ const styles = StyleSheet.create({
   },
   popularPlan: {
     borderColor: '#348f9f',
+  },
+  // Success Modal Styles
+  successOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  successCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 30,
+    padding: 30,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successIconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: '#348f9f',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#1C1C1E',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  successSubtitle: {
+    fontSize: 16,
+    color: '#348f9f',
+    fontWeight: '600',
+    marginBottom: 25,
+    textAlign: 'center',
+  },
+  successDetailsCard: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 30,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  successDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  successDetailLabel: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  successDetailValue: {
+    fontSize: 15,
+    color: '#1C1C1E',
+    fontWeight: '700',
+  },
+  successDetailAmount: {
+    fontSize: 18,
+    color: '#34C759',
+    fontWeight: '900',
+  },
+  successFinishBtn: {
+    width: '100%',
+    borderRadius: 15,
+    overflow: 'hidden',
+  },
+  successFinishGradient: {
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successFinishText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
 });
 

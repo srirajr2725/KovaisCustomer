@@ -171,7 +171,7 @@ const services = [
   {
     title: 'Funeral',
     description: 'Professional 24 Hours doorstep ritual services.',
-    image: 'https://images.unsplash.com/photo-1511210148-93661be46e8c?q=80&w=2070&auto=format&fit=crop',
+    image: 'https://i.pinimg.com/webp/1200x/53/6c/63/536c6323d439596e766f055498e775e4.webp',
     icon: Heart,
     color: '#d63031'
   },
@@ -311,24 +311,27 @@ const AnimatedServiceCard = ({ service, onPress, index }) => {
         activeOpacity={0.9}
         style={styles.cardTouchable}
       >
-        <Image source={{ uri: service.image }} style={styles.cardFullImage} resizeMode="cover" />
-        <LinearGradient
-          colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.95)']}
-          style={styles.cardFullGradient}
-        />
-        
+        <View style={styles.cardImageContainer}>
+          <Image source={{ uri: service.image }} style={styles.cardFullImage} resizeMode="cover" />
+          <View style={styles.cardFullGradient} />
+        </View>
+
         <View style={[styles.cardFloatingBadge, { backgroundColor: service.color }]}>
-          <IconComponent size={16} color="#FFF" />
+          <IconComponent size={20} color="#FFF" />
         </View>
 
         <View style={styles.cardContentOverlay}>
-          <Text style={styles.cardFullTitle}>{service.title}</Text>
-          <Text style={styles.cardFullDesc} numberOfLines={1}>
-            {service.description}
-          </Text>
+          <View>
+            <Text style={styles.cardFullTitle}>{service.title}</Text>
+            <Text style={styles.cardFullDesc} numberOfLines={2}>
+              {service.description}
+            </Text>
+          </View>
           <View style={styles.cardActionRow}>
             <Text style={styles.cardActionText}>Book Now</Text>
-            <ChevronRight size={14} color="rgba(255,255,255,0.8)" />
+            <View style={styles.cardActionIconWrapper}>
+              <ChevronRight size={14} color="#348f9f" />
+            </View>
           </View>
         </View>
       </TouchableOpacity>
@@ -448,9 +451,9 @@ const HomeScreen = () => {
 
   useEffect(() => {
     const featureCount = 4;
-    const badgeWidth = 165; 
+    const badgeWidth = 165;
     const totalWidth = featureCount * badgeWidth;
-    
+
     const startFeaturesAnimation = () => {
       featuresAnim.setValue(0);
       featuresAnimLoop.current = Animated.loop(
@@ -576,18 +579,18 @@ const HomeScreen = () => {
         animationType="fade"
         onRequestClose={() => setShowParlourSelection(false)}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
           onPress={() => setShowParlourSelection(false)}
         >
           <View style={styles.selectionCard}>
             <Text style={styles.selectionTitle}>Choose Your Parlour</Text>
             <Text style={styles.selectionSubtitle}>Select specialized service type</Text>
-            
+
             <View style={styles.selectionOptions}>
-              <TouchableOpacity 
-                style={[styles.selectionOption, { backgroundColor: '#348f9f10', borderColor: '#348f9f30' }]} 
+              <TouchableOpacity
+                style={[styles.selectionOption, { backgroundColor: '#348f9f10', borderColor: '#348f9f30' }]}
                 onPress={() => handleSelectParlour('Gents Parlour')}
               >
                 <View style={[styles.selectionIcon, { backgroundColor: '#348f9f' }]}>
@@ -596,7 +599,7 @@ const HomeScreen = () => {
                 <Text style={[styles.selectionLabel, { color: '#348f9f' }]}>Gents</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.selectionOption, { backgroundColor: '#FF475710', borderColor: '#FF475730' }]}
                 onPress={() => handleSelectParlour('Ladies Parlour')}
               >
@@ -607,8 +610,8 @@ const HomeScreen = () => {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity 
-              style={styles.cancelButton} 
+            <TouchableOpacity
+              style={styles.cancelButton}
               onPress={() => setShowParlourSelection(false)}
             >
               <Text style={styles.cancelText}>Cancel</Text>
@@ -629,8 +632,8 @@ const HomeScreen = () => {
             colors={['rgba(255,255,255,0.95)', 'rgba(255,250,230,0.98)']}
             style={styles.rewardCard}
           >
-            <TouchableOpacity 
-              style={styles.closeReward} 
+            <TouchableOpacity
+              style={styles.closeReward}
               onPress={() => setShowRewardModal(false)}
             >
               <X size={20} color="#94A3B8" />
@@ -646,7 +649,7 @@ const HomeScreen = () => {
 
             <Text style={styles.rewardTitle}>Special Gift For You!</Text>
             <Text style={styles.rewardSubtitle}>Welcome to Kovais Elite! We've added a special reward to your account.</Text>
-            
+
             <View style={styles.rewardAmountCard}>
               <View style={styles.rewardCoin}>
                 <Trophy size={20} color="#FFD700" />
@@ -655,8 +658,8 @@ const HomeScreen = () => {
               <Text style={styles.rewardUnit}>Points</Text>
             </View>
 
-            <TouchableOpacity 
-              style={styles.claimButton} 
+            <TouchableOpacity
+              style={styles.claimButton}
               onPress={handleClaimReward}
               activeOpacity={0.8}
             >
@@ -773,7 +776,7 @@ const HomeScreen = () => {
 
         {/* 24 Hours Doorstep Features Highlight */}
         <View style={styles.featuresBadgeContainer}>
-          <Animated.View 
+          <Animated.View
             style={[
               styles.featuresTickerContainer,
               { transform: [{ translateX: featuresAnim }] }
@@ -1117,77 +1120,99 @@ const styles = StyleSheet.create({
   },
   card: {
     width: (width - 55) / 2,
-    height: 220,
-    backgroundColor: '#000',
-    borderRadius: 32,
+    height: 255,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
     marginBottom: 20,
-    shadowColor: '#1E293B',
-    shadowOffset: { width: 0, height: 15 },
-    shadowOpacity: 0.15,
-    shadowRadius: 25,
-    elevation: 10,
-    overflow: 'hidden',
+    shadowColor: '#348f9f',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   cardTouchable: {
     flex: 1,
     position: 'relative',
   },
+  cardImageContainer: {
+    height: 140,
+    width: '100%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    overflow: 'hidden',
+  },
   cardFullImage: {
-    ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
   },
   cardFullGradient: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.1)',
   },
   cardFloatingBadge: {
     position: 'absolute',
-    top: 15,
+    top: 116,
     right: 15,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
     elevation: 8,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    zIndex: 10,
   },
   cardContentOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     padding: 16,
+    paddingTop: 18,
+    flex: 1,
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
   },
   cardFullTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
+    color: '#0F172A',
+    fontSize: 16,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
+    marginBottom: 4,
   },
   cardFullDesc: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 2,
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 16,
   },
   cardActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    gap: 4,
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
   },
   cardActionText: {
-    color: 'rgba(255,255,255,0.9)',
+    color: '#348f9f',
     fontSize: 11,
     fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  cardActionIconWrapper: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#F0FDFA',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   amenitiesSection: {
     marginTop: 10,

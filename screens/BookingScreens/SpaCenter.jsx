@@ -8,7 +8,6 @@ import {
   TextInput,
   Modal,
   StyleSheet,
-  Dimensions,
   ActivityIndicator,
   Platform,
   Linking,
@@ -44,7 +43,16 @@ import { useAuth } from '../AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import LinearGradient from 'react-native-linear-gradient';
-const { width, height } = Dimensions.get('window');
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  SCREEN_WIDTH as width,
+  SCREEN_HEIGHT as height,
+  isSmallMobile,
+  isMediumMobile,
+  isLargeMobile
+} from '../../utils/responsive';
 
 // Custom Popup Component
 const CustomPopup = ({ visible, title, message, type = 'info', buttons = [], onClose }) => {
@@ -126,6 +134,23 @@ const SpaBooking = ({ onGoBack, goBack }) => {
 
   // All useState hooks MUST be called in the same order every render
   const [points, setPoints] = useState(0);
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    email: '',
+  });
+
+  useEffect(() => {
+    if (user) {
+      const userPhone = user.phone || user.mobile || user.customer_phone || user.contact || (/^\d{10}$/.test(user.username) ? user.username : '') || '';
+      setFormData({
+        name: user.name || user.username || '',
+        phone: userPhone,
+        email: user.email || ''
+      });
+    }
+  }, [user]);
+
   const [selectedGender, setSelectedGender] = useState('Men');
   const [selectedService, setSelectedService] = useState(null);
   const [selectedServices, setSelectedServices] = useState([]);
@@ -146,6 +171,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
   const [isNewUser, setIsNewUser] = useState(false);
   const [loading, setLoading] = useState(false);
   const [value, setValue] = useState('');
+  const [doorstepAddress, setDoorstepAddress] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
@@ -315,15 +342,22 @@ const SpaBooking = ({ onGoBack, goBack }) => {
   }, []);
 
   useEffect(() => {
-    if (user?.points !== undefined) {
-      setPoints(user.points);
+    if (user) {
+      if (user.points !== undefined) {
+        setPoints(user.points);
+      }
+      const userPhone = user.phone || user.mobile || user.customer_phone || user.contact || (/^\d{10}$/.test(user.username) ? user.username : '') || '';
+      if (!phoneNumber && userPhone) {
+        setPhoneNumber(userPhone);
+      }
     }
   }, [user]);
 
   useEffect(() => {
-    const totalAmount = selectedServices.reduce((sum, s) => sum + s.amount, 0);
-    setAmount(totalAmount);
-  }, [selectedServices]);
+    const doorstepCharge = location === 'doorstep' ? 300 : 0;
+    const totalAmount = selectedServices.reduce((sum, s) => sum + s.amount, 0) + doorstepCharge;
+    setAmount(Math.max(0, totalAmount - (usedPoints || 0)));
+  }, [selectedServices, location, usedPoints]);
 
   const isToday = (date) => {
     const today = new Date();
@@ -482,18 +516,15 @@ const SpaBooking = ({ onGoBack, goBack }) => {
       return;
     }
 
-    const totalAmount = selectedServices.reduce((sum, s) => sum + s.amount, 0);
+    const doorstepCharge = location === 'doorstep' ? 300 : 0;
+    const currentTotal = selectedServices.reduce((sum, s) => sum + s.amount, 0) + doorstepCharge;
 
-    if (pointsToUse > totalAmount) {
-      showPopup('Error', `Cannot use more than ₹${totalAmount} (total price).`, 'error');
+    if (pointsToUse > currentTotal) {
+      showPopup('Error', `Cannot use more than ₹${currentTotal} (total price).`, 'error');
       return;
     }
 
-    const newPoints = points - pointsToUse;
-    const newPrice = totalAmount - pointsToUse;
-
-    setPoints(newPoints);
-    setAmount(newPrice);
+    setPoints(points - pointsToUse);
     setUsedPoints(pointsToUse);
     setValue('');
   };
@@ -598,12 +629,22 @@ const SpaBooking = ({ onGoBack, goBack }) => {
       return;
     }
 
+    const reliablePhone = formData.phone || user?.phone || user?.data?.phone || user?.mobile || user?.data?.mobile || user?.customer_phone || user?.data?.customer_phone || user?.contact || user?.data?.contact || (user?.username && /^\d{10}/.test(user.username) ? user.username.match(/^\d{10}/)[0] : '') || phoneNumber || '';
+
+    const finalAddress = (location === 'doorstep' && doorstepAddress?.trim()) ? doorstepAddress : (user?.address || user?.data?.address || '');
+
+    if (location === 'doorstep' && !finalAddress) {
+      showPopup('Validation', 'Please provide a valid doorstep address.', 'warning');
+      return;
+    }
+
     if (!paymentStatus || !paymentType) {
       showPopup('Error', 'Payment information is missing.', 'error');
       return;
     }
 
     try {
+      const getUserId = () => user?.user_id || user?.id || user?.customer_id;
       const userId = getUserId();
       if (!userId) {
         showPopup('Error', 'User not found. Please login again.', 'error', [{
@@ -618,43 +659,30 @@ const SpaBooking = ({ onGoBack, goBack }) => {
         return;
       }
 
-      const doorstepCharge = location === 'doorstep' ? 300 : 0;
-      const finalAmount = (amount || selectedServices.reduce((sum, s) => sum + s.amount, 0)) + doorstepCharge;
+      const finalAmount = amount || (selectedServices.reduce((sum, s) => sum + s.amount, 0) + (location === 'doorstep' ? 300 : 0) - usedPoints);
 
-      const userPhone = user?.phone || user?.mobile || user?.customer_phone || user?.contact || '';
-      const data = {
-        category: selectedGender,
-        services: selectedServices.map(s => s.name).join(", "),
+      const payload = {
+        category: selectedGender === 'Gentlemen' ? 'Gents' : 'Ladies', // Literal Barber mapping
+        services: selectedServices.map(s => s.name).join(", ") + (location === 'doorstep' ? ' - DOOR STEP' : '') + ` | Ph: ${reliablePhone} | Loc: ${finalAddress || 'At SPA'}`,
         amount: finalAmount,
-        order_type: location === 'doorstep' ? 'Door Step' : 'Salon',
         date: formatDate(selectedDate),
         time: selectedTime,
-        payment_status: paymentStatus,
-        payment_type: paymentType,
-        payment_method: selectedPaymentMethod || 'Cash',
+        payment_status: 'Completed', // Barber Pattern
+        payment_type: paymentType || 'Cash',
         customer_id: userId,
         status: 'booked',
-        customer_name: user?.name || user?.username || user?.data?.name || 'Guest',
-        customer_phone: userPhone,
-        mobile: userPhone,
-        phone: userPhone,
-        mobile_no: userPhone,
-        phone_number: userPhone,
-        contact: userPhone,
-        contact_number: userPhone,
-        points: usedPoints
+        customer_name: `${user?.username || 'Guest'} - ${reliablePhone}`,
+        phone: reliablePhone,
+        points: usedPoints,
+
+        // Safety context
+        Category: 'spa',
       };
 
       setLoading(true);
       const response = await axios.post(
         "https://api.codingboss.in/kovais/spa/orders/",
-        data,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        }
+        payload
       );
 
       const orderData = response.data || {};
@@ -665,7 +693,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
         const localOrders = await AsyncStorage.getItem('offline_orders');
         const orders = localOrders ? JSON.parse(localOrders) : [];
         orders.push({
-          ...data,
+          ...payload,
           id: orderId,
           Category: 'spa',
           created_at: new Date().toISOString()
@@ -700,7 +728,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
         const localOrders = await AsyncStorage.getItem('offline_orders');
         const orders = localOrders ? JSON.parse(localOrders) : [];
         orders.push({
-          ...data,
+          ...payload,
           id: mockOrderId,
           Category: 'spa',
           created_at: new Date().toISOString()
@@ -732,10 +760,19 @@ const SpaBooking = ({ onGoBack, goBack }) => {
     }
   };
 
+  const handleProceedFromSpaModal = () => {
+    if (!formData.phone || formData.phone.length < 10) {
+      showPopup('Validation', 'Please enter a valid 10-digit mobile number.', 'warning');
+      return;
+    }
+    setShowModal(false);
+    setShowPaymentModal(true);
+  };
+
   const handlePayAtSpa = () => {
     setShowModal(false);
     setShowPaymentModal(false);
-    spaRequest('pending', 'offline');
+    spaRequest('pending', 'Cash');
   };
 
   const handlePayWithUPI = () => {
@@ -775,8 +812,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
           <ScrollView style={styles.luxeModalContent}>
             <View style={styles.luxeForm}>
               <View style={styles.luxeFormGroup}>
-                <Text style={styles.luxeFormLabel}>USERNAME</Text>
-                <TextInput style={styles.luxeFormInput} placeholder="Enter username" placeholderTextColor="#94A3B8" value={userData.username} onChangeText={(text) => setUserData({ ...userData, username: text })} />
+                <Text style={styles.luxeFormLabel}>MOBILE NUMBER / USERNAME</Text>
+                <TextInput style={styles.luxeFormInput} placeholder="Enter mobile or username" placeholderTextColor="#94A3B8" value={userData.username} onChangeText={(text) => setUserData({ ...userData, username: text })} />
               </View>
 
               {isNewUser && (
@@ -851,6 +888,12 @@ const SpaBooking = ({ onGoBack, goBack }) => {
               <View style={styles.luxePriceDivider} />
 
               <View style={styles.luxePriceBreakdown}>
+                {location === 'doorstep' && (
+                  <View style={styles.luxeDiscountRow}>
+                    <Text style={[styles.luxeDiscountLabel, { color: '#64748B' }]}>Doorstep Charge</Text>
+                    <Text style={[styles.luxeDiscountValue, { color: '#1E293B' }]}>+ ₹300</Text>
+                  </View>
+                )}
                 {usedPoints > 0 && (
                   <View style={styles.luxeDiscountRow}>
                     <Text style={styles.luxeDiscountLabel}>Points Discount</Text>
@@ -862,6 +905,13 @@ const SpaBooking = ({ onGoBack, goBack }) => {
                   <Text style={styles.luxePriceValue}>₹{amount.toLocaleString()}</Text>
                 </View>
                 <Text style={styles.luxeTaxNote}>Inclusive of all taxes and fees</Text>
+              </View>
+            </View>
+
+            <View style={[styles.luxePointsSection, { marginBottom: 0 }]}>
+              <Text style={styles.luxeSectionHeader}>MOBILE NUMBER</Text>
+              <View style={styles.luxePointsInputRow}>
+                <TextInput style={styles.luxePointsInput} placeholder="Enter 10-digit mobile number" keyboardType="numeric" maxLength={10} value={formData.phone} onChangeText={(text) => setFormData({ ...formData, phone: text })} />
               </View>
             </View>
 
@@ -880,7 +930,7 @@ const SpaBooking = ({ onGoBack, goBack }) => {
           <View style={styles.luxeModalFooter}>
             <TouchableOpacity
               style={styles.luxeConfirmBtn}
-              onPress={() => { setShowModal(false); setShowPaymentModal(true); }}
+              onPress={handleProceedFromSpaModal}
             >
               <View style={styles.luxeBtnGradient}>
                 <Text style={styles.luxeBtnText}>CHOOSE PAYMENT METHOD</Text>
@@ -894,8 +944,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
 
   const renderPaymentModal = () => {
     const paymentMethods = [
-      { id: 'upi', title: 'UPI UPI', subtitle: 'PhonePe, GPay, Paytm', icon: '📱' },
-      { id: 'cod', title: 'Pay at Spa', subtitle: 'Cash payment on arrival', icon: '💵' }
+      { id: 'upi', title: 'UPI Payment', subtitle: 'PhonePe, GPay, Paytm', icon: '📱' },
+      { id: 'cod', title: location === 'doorstep' ? 'Pay on Delivery' : 'Pay at Spa', subtitle: 'Cash payment', icon: '💵' }
     ];
 
     return (
@@ -1061,6 +1111,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
               <Text style={[styles.luxeGenderText, location === 'doorstep' && styles.luxeGenderTextActive]}>DOORSTEP (24H)</Text>
             </TouchableOpacity>
           </View>
+
+
           {location === 'doorstep' && (
             <View style={styles.luxeAddressContainer}>
               <Text style={styles.luxeFormLabel}>DOORSTEP ADDRESS</Text>
@@ -1069,8 +1121,8 @@ const SpaBooking = ({ onGoBack, goBack }) => {
                 placeholder="Enter your address for 24h service"
                 placeholderTextColor="#94A3B8"
                 multiline
-                value={value}
-                onChangeText={setValue}
+                value={doorstepAddress}
+                onChangeText={setDoorstepAddress}
               />
             </View>
           )}
@@ -1440,10 +1492,10 @@ const styles = StyleSheet.create({
     color: '#348f9f',
   },
   luxeServiceDesc: {
-    fontSize: 13,
+    fontSize: moderateScale(13),
     color: '#64748B',
-    lineHeight: 20,
-    marginBottom: 20,
+    lineHeight: moderateScale(20),
+    marginBottom: verticalScale(20),
   },
   luxeServiceFooter: {
     flexDirection: 'row',
@@ -1462,7 +1514,7 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
   luxePriceValue: {
-    fontSize: 24,
+    fontSize: moderateScale(24),
     fontWeight: '800',
     color: '#1E293B',
   },
@@ -1506,10 +1558,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   luxeTimeSlot: {
-    width: (width - 60) / 3,
-    height: 50,
+    width: (width - scale(60)) / 3,
+    height: verticalScale(50),
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: moderateScale(12),
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -1551,7 +1603,7 @@ const styles = StyleSheet.create({
   },
   luxeBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: moderateScale(14),
     fontWeight: '800',
     letterSpacing: 1.5,
   },
@@ -1605,7 +1657,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
   },
   luxeModalTitle: {
-    fontSize: 16,
+    fontSize: moderateScale(16),
     fontWeight: '800',
     color: '#1E293B',
     letterSpacing: 2,
@@ -1658,11 +1710,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   luxeFormInput: {
-    height: 56,
+    height: verticalScale(56),
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 15,
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(16),
+    fontSize: moderateScale(15),
     color: '#1E293B',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -1848,7 +1900,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   luxeAmountValue: {
-    fontSize: 32,
+    fontSize: moderateScale(32),
     fontWeight: '900',
     color: '#1E293B',
   },

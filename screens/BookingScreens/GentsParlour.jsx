@@ -8,7 +8,6 @@ import {
   TextInput,
   Modal,
   StyleSheet,
-  Dimensions,
   ActivityIndicator,
   StatusBar,
   BackHandler,
@@ -35,8 +34,17 @@ import { Calendar } from 'react-native-calendars';
 import { useAuth } from '../AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import * as Animatable from 'react-native-animatable';
+import { 
+  scale, 
+  verticalScale, 
+  moderateScale, 
+  SCREEN_WIDTH as width, 
+  SCREEN_HEIGHT as height,
+  isSmallMobile,
+  isMediumMobile,
+  isLargeMobile
+} from '../../utils/responsive';
 
-const { width, height } = Dimensions.get('window');
 const API_BASE_URL = 'https://api.codingboss.in/kovais/saloon';
 
 const GentsParlour = ({ goBack }) => {
@@ -64,10 +72,11 @@ const GentsParlour = ({ goBack }) => {
 
   useEffect(() => {
     if (user) {
+      const userPhone = user.phone || user.mobile || user.customer_phone || user.contact || (/^\d{10}$/.test(user.username) ? user.username : '') || '';
       setFormData(prev => ({
         ...prev,
         name: user.name || user.username || '',
-        phone: user.phone || '',
+        phone: userPhone,
         email: user.email || ''
       }));
     }
@@ -111,12 +120,16 @@ const GentsParlour = ({ goBack }) => {
       return;
     }
 
-    if (!formData.phone) {
+    const reliablePhone = formData.phone || user?.phone || user?.data?.phone || user?.mobile || user?.data?.mobile || user?.customer_phone || user?.data?.customer_phone || user?.contact || user?.data?.contact || (user?.username && /^\d{10}/.test(user.username) ? user.username.match(/^\d{10}/)[0] : '') || '';
+    
+    const finalAddress = formData.address?.trim() ? formData.address : (user?.address || user?.data?.address || '');
+
+    if (!reliablePhone && !isAuthenticated) {
       Alert.alert("Phone Required", "Please provide a contact phone number for the stylist.");
       return;
     }
 
-    if (!formData.address) {
+    if (!finalAddress) {
       Alert.alert("Address Required", "Please provide the home or office address for service.");
       return;
     }
@@ -125,31 +138,39 @@ const GentsParlour = ({ goBack }) => {
     const totalAmount = selectedServices.reduce((sum, s) => sum + s.price, 0);
 
     const payload = {
-      customer_id: userId,
-      customer: userId,
-      user_id: userId,
-      user: userId,
-      customer_name: formData.name || 'Valued Guest',
-      customer_phone: formData.phone,
-      mobile: formData.phone,
-      phone: formData.phone,
-      mobile_no: formData.phone,
-      phone_number: formData.phone,
-      mobile_number: formData.phone,
-      contact: formData.phone,
-      contact_number: formData.phone,
-      customer_mobile: formData.phone,
-      customer_contact: formData.phone,
-      customer_mobile_number: formData.phone,
-      customer_phone_number: formData.phone,
-      address: formData.address,
-      services: selectedServices.map(s => s.name).join(', '),
+      category: 'Gents - DOOR STEP',
+      services: selectedServices.map(s => s.name).join(', ') + ` | Ph: ${reliablePhone} | Loc: ${finalAddress || 'Salon'}`,
       amount: totalAmount,
       date: selectedDate,
+      time: '10:00 AM',
+      payment_status: 'Completed', // Barber Pattern
+      payment_type: 'Cash',
+      customer_id: userId,
       status: 'booked',
-      category: 'Gents',
+      customer_name: `${user?.username || 'Guest'} - ${reliablePhone}`,
+      phone: reliablePhone,
+      points: 0,
+
+      // 🛡️ MEGA REDUNDANCY: Blasting every possible phone alias
+      mobile: reliablePhone,
+      mobile_no: reliablePhone,
+      phone_number: reliablePhone,
+      mobile_number: reliablePhone,
+      contact: reliablePhone,
+      contact_number: reliablePhone,
+      customer_phone: reliablePhone,
+      customer_mobile: reliablePhone,
+      customer_contact: reliablePhone,
+      customer_mobile_number: reliablePhone,
+      customer_phone_number: reliablePhone,
+      registrator_phone: reliablePhone,
+      registrator_mobile: reliablePhone,
+      logged_phone: reliablePhone,
+
+      // Safety context
       Category: 'saloon',
-      order_type: 'Door Step'
+      order_type: 'Door Step',
+      address: finalAddress,
     };
 
     try {
@@ -226,15 +247,6 @@ const GentsParlour = ({ goBack }) => {
                 onChangeText={(t) => setFormData(p => ({ ...p, address: t }))}
               />
             </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Phone Number</Text>
-              <TextInput
-                style={styles.input}
-                keyboardType="phone-pad"
-                value={formData.phone}
-                onChangeText={(t) => setFormData(p => ({ ...p, phone: t }))}
-              />
-            </View>
           </View>
 
           <TouchableOpacity style={styles.bookBtn} onPress={handleBookingSubmit} disabled={loading}>
@@ -248,26 +260,26 @@ const GentsParlour = ({ goBack }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 20, backgroundColor: '#FFF' },
-  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#1E293B' },
-  scrollContent: { padding: 20 },
-  sectionTitle: { fontSize: 20, fontWeight: '900', color: '#1E293B', marginBottom: 20 },
-  servicesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 15, justifyContent: 'space-between' },
-  serviceCard: { width: (width - 55) / 2, height: 200, backgroundColor: '#FFF', borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0', position: 'relative' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: scale(20), paddingBottom: verticalScale(20), backgroundColor: '#FFF' },
+  backBtn: { width: moderateScale(40), height: moderateScale(40), borderRadius: moderateScale(20), backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: moderateScale(18), fontWeight: '800', color: '#1E293B' },
+  scrollContent: { padding: moderateScale(20) },
+  sectionTitle: { fontSize: moderateScale(20), fontWeight: '900', color: '#1E293B', marginBottom: verticalScale(20) },
+  servicesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: scale(15), justifyContent: 'space-between' },
+  serviceCard: { width: (width - scale(55)) / 2, height: verticalScale(200), backgroundColor: '#FFF', borderRadius: moderateScale(24), overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0', position: 'relative' },
   serviceImage: { ...StyleSheet.absoluteFillObject },
   cardGradient: { ...StyleSheet.absoluteFillObject },
   selectedCard: { borderColor: '#348f9f', borderWidth: 2 },
-  serviceInfo: { position: 'absolute', bottom: 12, left: 12, right: 12 },
-  serviceName: { fontSize: 13, fontWeight: '800', color: '#FFF', marginBottom: 2 },
-  servicePrice: { fontSize: 14, fontWeight: '800', color: '#FFF' },
-  checkBadge: { position: 'absolute', top: 12, right: 12, width: 24, height: 24, borderRadius: 12, backgroundColor: '#348f9f', justifyContent: 'center', alignItems: 'center' },
-  formSection: { marginTop: 30 },
-  inputGroup: { marginBottom: 20 },
-  label: { fontSize: 14, fontWeight: '700', color: '#64748B', marginBottom: 8 },
-  input: { backgroundColor: '#FFF', paddingHorizontal: 15, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', fontSize: 15, color: '#1E293B', paddingVertical: 12 },
-  bookBtn: { marginTop: 20, backgroundColor: '#348f9f', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
-  bookBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800' }
+  serviceInfo: { position: 'absolute', bottom: verticalScale(12), left: scale(12), right: scale(12) },
+  serviceName: { fontSize: moderateScale(13), fontWeight: '800', color: '#FFF', marginBottom: verticalScale(2) },
+  servicePrice: { fontSize: moderateScale(14), fontWeight: '800', color: '#FFF' },
+  checkBadge: { position: 'absolute', top: moderateScale(12), right: moderateScale(12), width: moderateScale(24), height: moderateScale(24), borderRadius: moderateScale(12), backgroundColor: '#348f9f', justifyContent: 'center', alignItems: 'center' },
+  formSection: { marginTop: verticalScale(30) },
+  inputGroup: { marginBottom: verticalScale(20) },
+  label: { fontSize: moderateScale(14), fontWeight: '700', color: '#64748B', marginBottom: verticalScale(8) },
+  input: { backgroundColor: '#FFF', paddingHorizontal: scale(15), borderRadius: moderateScale(12), borderWidth: 1, borderColor: '#E2E8F0', fontSize: moderateScale(15), color: '#1E293B', paddingVertical: verticalScale(12) },
+  bookBtn: { marginTop: verticalScale(20), backgroundColor: '#348f9f', paddingVertical: verticalScale(16), borderRadius: moderateScale(16), alignItems: 'center' },
+  bookBtnText: { color: '#FFF', fontSize: moderateScale(16), fontWeight: '800' }
 });
 
 export default GentsParlour;

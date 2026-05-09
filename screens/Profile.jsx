@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  Image, 
-  Alert, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Alert,
   ScrollView,
-  Dimensions,
   StatusBar,
   TextInput,
   Modal,
@@ -21,24 +20,32 @@ import * as Animatable from 'react-native-animatable';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
-import { 
-  User, 
+import {
+  User,
   Settings,
-  ChevronRight, 
+  ChevronRight,
   ChevronLeft,
-  Calendar, 
-  CreditCard, 
-  HelpCircle, 
-  ShieldCheck, 
-  LogOut, 
+  Calendar,
+  CreditCard,
+  HelpCircle,
+  ShieldCheck,
+  LogOut,
   LogIn,
   Camera,
   Zap,
   Heart,
   LayoutDashboard
 } from 'lucide-react-native';
-
-const { width, height } = Dimensions.get('window');
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  SCREEN_WIDTH as width,
+  SCREEN_HEIGHT as height,
+  isSmallMobile,
+  isMediumMobile,
+  isLargeMobile
+} from '../utils/responsive';
 
 const STORAGE_KEYS = {
   LOGGED_IN_USER: 'loggedInUser',
@@ -55,7 +62,7 @@ const ExecutiveHeader = ({ title, onBack, rightIcon: RightIcon, onRightPress, is
   const insets = useSafeAreaInsets();
   return (
     <View style={[
-      styles.luxeExecutiveHeader, 
+      styles.luxeExecutiveHeader,
       isDarkMode && styles.luxeExecutiveHeaderDark,
       { paddingTop: Math.max(insets.top, 20) }
     ]}>
@@ -79,8 +86,8 @@ const ExecutiveHeader = ({ title, onBack, rightIcon: RightIcon, onRightPress, is
 
 // Modern Menu Item with Dark Mode
 const MenuItem = ({ icon: IconComponent, title, subtitle, onPress, isDarkMode }) => (
-  <TouchableOpacity 
-    style={[styles.luxeMenuItem, isDarkMode && styles.luxeMenuItemDark]} 
+  <TouchableOpacity
+    style={[styles.luxeMenuItem, isDarkMode && styles.luxeMenuItemDark]}
     onPress={onPress}
     activeOpacity={0.7}
   >
@@ -123,7 +130,7 @@ const Profile = ({ isDarkMode }) => {
       setIsCheckingLogin(true);
       let loggedInUser = await AsyncStorage.getItem(STORAGE_KEYS.LOGGED_IN_USER);
       if (!loggedInUser) loggedInUser = await AsyncStorage.getItem('User_data');
-      
+
       if (loggedInUser) {
         const userData = JSON.parse(loggedInUser);
         setUser(userData);
@@ -142,12 +149,14 @@ const Profile = ({ isDarkMode }) => {
   const handleLogout = async () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: async () => {
+      {
+        text: 'Logout', style: 'destructive', onPress: async () => {
           await AsyncStorage.multiRemove([STORAGE_KEYS.LOGGED_IN_USER, 'User_data']);
           setIsLoggedIn(false);
           setUser(null);
           setCurrentView('profile');
-      }}
+        }
+      }
     ]);
   };
 
@@ -163,14 +172,14 @@ const Profile = ({ isDarkMode }) => {
   return (
     <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
       <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} backgroundColor={isDarkMode ? "#121212" : "#FFFFFF"} />
-      <ExecutiveHeader 
-        title={isLoggedIn ? "Account Profile" : "Kovais Member"} 
+      <ExecutiveHeader
+        title={isLoggedIn ? "Account Profile" : "Kovais Member"}
         rightIcon={isLoggedIn ? Settings : LogIn}
         onRightPress={() => isLoggedIn ? navigation.navigate('Settings') : setShowLogin(true)}
         isDarkMode={isDarkMode}
       />
 
-      <ScrollView 
+      <ScrollView
         style={[styles.luxeContent, isDarkMode && styles.luxeContentDark]}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
@@ -188,7 +197,7 @@ const Profile = ({ isDarkMode }) => {
                   <Camera size={14} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
-              
+
               <Text style={[styles.luxeUserName, isDarkMode && styles.luxeUserNameDark]}>{user.name || user.username || 'Premium Member'}</Text>
               <Text style={[styles.luxeUserEmail, isDarkMode && styles.luxeUserEmailDark]}>{user.email || user.phone || 'Member ID: #7821'}</Text>
 
@@ -218,7 +227,7 @@ const Profile = ({ isDarkMode }) => {
                 icon={CreditCard}
                 title="Payment Hub"
                 subtitle="Save & manage your cards/UPI"
-                onPress={() => {}}
+                onPress={() => { }}
                 isDarkMode={isDarkMode}
               />
             </View>
@@ -241,7 +250,7 @@ const Profile = ({ isDarkMode }) => {
               />
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.luxeLogoutBtn, isDarkMode && styles.luxeLogoutBtnDark]}
               onPress={handleLogout}
             >
@@ -252,28 +261,28 @@ const Profile = ({ isDarkMode }) => {
         ) : (
           <Animatable.View animation="fadeIn" duration={800} style={[styles.luxeWelcome, isDarkMode && styles.luxeWelcomeDark]}>
             <View style={[styles.luxeLogoCircle, isDarkMode && styles.luxeLogoCircleDark]}>
-              <Image 
-                source={require('./assets/klogo.png')} 
+              <Image
+                source={require('./assets/klogo.png')}
                 style={styles.luxeWelcomeLogo}
                 resizeMode="contain"
               />
             </View>
-            
+
             <Text style={[styles.luxeWelcomeTitle, isDarkMode && styles.luxeWelcomeTitleDark]}>Discover Excellence</Text>
             <Text style={[styles.luxeWelcomeSub, isDarkMode && styles.luxeWelcomeSubDark]}>
               Experience curated premium services tailored just for you. Sign in to unlock your personalized dashboard.
             </Text>
 
             <View style={styles.luxeWelcomeActions}>
-              <TouchableOpacity 
-                style={styles.luxePrimaryBtn} 
+              <TouchableOpacity
+                style={styles.luxePrimaryBtn}
                 onPress={() => navigation.navigate('Login')}
               >
                 <Text style={styles.luxePrimaryBtnText}>Sign In</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={[styles.luxeSecondaryBtn, isDarkMode && styles.luxeSecondaryBtnDark]} 
+              <TouchableOpacity
+                style={[styles.luxeSecondaryBtn, isDarkMode && styles.luxeSecondaryBtnDark]}
                 onPress={() => navigation.navigate('SignUp')}
               >
                 <Text style={styles.luxeSecondaryBtnText}>Create Account</Text>
@@ -321,8 +330,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    marginTop: 20,
-    fontSize: 16,
+    marginTop: verticalScale(20),
+    fontSize: moderateScale(16),
     color: '#348f9f',
     fontWeight: '700',
   },
@@ -343,13 +352,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 15,
+    paddingHorizontal: scale(20),
+    paddingBottom: verticalScale(15),
   },
   luxeHeaderBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: moderateScale(44),
+    height: moderateScale(44),
+    borderRadius: moderateScale(12),
     backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
@@ -361,14 +370,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   luxeHeaderPrestige: {
-    fontSize: 10,
+    fontSize: moderateScale(10),
     fontWeight: '800',
     color: '#348f9f',
     letterSpacing: 3,
-    marginBottom: 2,
+    marginBottom: verticalScale(2),
   },
   luxeHeaderMainTitle: {
-    fontSize: 18,
+    fontSize: moderateScale(18),
     fontWeight: '800',
     color: '#1E293B',
   },
@@ -376,9 +385,9 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
   },
   luxeHeaderProfile: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: moderateScale(44),
+    height: moderateScale(44),
+    borderRadius: moderateScale(12),
     backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
@@ -389,8 +398,8 @@ const styles = StyleSheet.create({
   // Profile Summary
   luxeProfileSummary: {
     alignItems: 'center',
-    paddingTop: 40,
-    paddingBottom: 30,
+    paddingTop: verticalScale(40),
+    paddingBottom: verticalScale(30),
     backgroundColor: '#FFFFFF',
   },
   luxeProfileSummaryDark: {
@@ -398,12 +407,12 @@ const styles = StyleSheet.create({
   },
   luxeAvatarContainer: {
     position: 'relative',
-    marginBottom: 16,
+    marginBottom: verticalScale(16),
   },
   luxeAvatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: moderateScale(100),
+    height: moderateScale(100),
+    borderRadius: moderateScale(50),
     backgroundColor: '#348f9f',
     justifyContent: 'center',
     alignItems: 'center',
@@ -414,7 +423,7 @@ const styles = StyleSheet.create({
     borderColor: '#1E293B',
   },
   luxeAvatarInitial: {
-    fontSize: 40,
+    fontSize: moderateScale(40),
     fontWeight: '800',
     color: '#FFFFFF',
   },
@@ -423,27 +432,27 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     backgroundColor: '#1E293B',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: moderateScale(32),
+    height: moderateScale(32),
+    borderRadius: moderateScale(16),
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
   luxeUserName: {
-    fontSize: 22,
+    fontSize: moderateScale(22),
     fontWeight: '800',
     color: '#1E293B',
-    marginBottom: 4,
+    marginBottom: verticalScale(4),
   },
   luxeUserNameDark: {
     color: '#F8FAFC',
   },
   luxeUserEmail: {
-    fontSize: 14,
+    fontSize: moderateScale(14),
     color: '#64748B',
-    marginBottom: 16,
+    marginBottom: verticalScale(16),
   },
   luxeUserEmailDark: {
     color: '#94A3B8',
@@ -452,26 +461,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F0FDFA',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: scale(16),
+    paddingVertical: verticalScale(8),
+    borderRadius: moderateScale(20),
     gap: 8,
   },
   luxePointsBadgeDark: {
     backgroundColor: '#0F172A',
   },
   luxePointsText: {
-    fontSize: 14,
+    fontSize: moderateScale(14),
     fontWeight: '700',
     color: '#348f9f',
   },
   // Menu Card
   luxeMenuCard: {
     backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    marginTop: 24,
-    borderRadius: 24,
-    padding: 16,
+    marginHorizontal: scale(20),
+    marginTop: verticalScale(24),
+    borderRadius: moderateScale(24),
+    padding: moderateScale(16),
     borderWidth: 1.5,
     borderColor: '#F1F5F9',
     elevation: 2,
@@ -485,13 +494,13 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   luxeGroupLabel: {
-    fontSize: 11,
+    fontSize: moderateScale(11),
     fontWeight: '800',
     color: '#94A3B8',
     letterSpacing: 1.5,
-    marginLeft: 12,
-    marginBottom: 16,
-    marginTop: 8,
+    marginLeft: scale(12),
+    marginBottom: verticalScale(16),
+    marginTop: verticalScale(8),
   },
   luxeGroupLabelDark: {
     color: '#64748B',
@@ -499,27 +508,27 @@ const styles = StyleSheet.create({
   luxeMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 16,
-    marginBottom: 4,
+    padding: moderateScale(12),
+    borderRadius: moderateScale(16),
+    marginBottom: verticalScale(4),
   },
   luxeMenuItemDark: {
     backgroundColor: 'transparent',
   },
   luxeMenuIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: moderateScale(44),
+    height: moderateScale(44),
+    borderRadius: moderateScale(12),
     backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: scale(16),
   },
   luxeMenuIconDark: {
     backgroundColor: '#0F172A',
   },
   luxeMenuTitle: {
-    fontSize: 15,
+    fontSize: moderateScale(15),
     fontWeight: '700',
     color: '#1E293B',
   },
@@ -527,16 +536,16 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
   },
   luxeMenuSub: {
-    fontSize: 12,
+    fontSize: moderateScale(12),
     color: '#94A3B8',
-    marginTop: 2,
+    marginTop: verticalScale(2),
   },
   luxeMenuSubDark: {
     color: '#64748B',
   },
   // Welcome View
   luxeWelcome: {
-    padding: 30,
+    padding: moderateScale(30),
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     flex: 1,
@@ -545,64 +554,64 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   luxeLogoCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: moderateScale(120),
+    height: moderateScale(120),
+    borderRadius: moderateScale(60),
     backgroundColor: '#F8FAFC',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: verticalScale(32),
     elevation: 4,
   },
   luxeLogoCircleDark: {
     backgroundColor: '#1E293B',
   },
   luxeWelcomeLogo: {
-    width: 70,
-    height: 70,
+    width: scale(70),
+    height: scale(70),
   },
   luxeWelcomeTitle: {
-    fontSize: 28,
+    fontSize: moderateScale(28),
     fontWeight: '900',
     color: '#1E293B',
-    marginBottom: 12,
+    marginBottom: verticalScale(12),
     textAlign: 'center',
   },
   luxeWelcomeTitleDark: {
     color: '#F8FAFC',
   },
   luxeWelcomeSub: {
-    fontSize: 15,
+    fontSize: moderateScale(15),
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 40,
-    paddingHorizontal: 20,
+    lineHeight: moderateScale(22),
+    marginBottom: verticalScale(40),
+    paddingHorizontal: scale(20),
   },
   luxeWelcomeSubDark: {
     color: '#94A3B8',
   },
   luxeWelcomeActions: {
     width: '100%',
-    gap: 16,
+    gap: verticalScale(16),
   },
   luxePrimaryBtn: {
     backgroundColor: '#348f9f',
-    height: 60,
-    borderRadius: 20,
+    height: verticalScale(60),
+    borderRadius: moderateScale(20),
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 4,
   },
   luxePrimaryBtnText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: moderateScale(16),
     fontWeight: '800',
   },
   luxeSecondaryBtn: {
     backgroundColor: '#FFFFFF',
-    height: 60,
-    borderRadius: 20,
+    height: verticalScale(60),
+    borderRadius: moderateScale(20),
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -614,17 +623,17 @@ const styles = StyleSheet.create({
   },
   luxeSecondaryBtnText: {
     color: '#1E293B',
-    fontSize: 16,
+    fontSize: moderateScale(16),
     fontWeight: '800',
   },
   luxeTrustSection: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
-    marginTop: 40,
+    marginTop: verticalScale(40),
     backgroundColor: '#F8FAFC',
-    padding: 24,
-    borderRadius: 24,
+    padding: moderateScale(24),
+    borderRadius: moderateScale(24),
   },
   luxeTrustSectionDark: {
     backgroundColor: '#1E293B',
@@ -634,7 +643,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   luxeTrustLabel: {
-    fontSize: 11,
+    fontSize: moderateScale(11),
     fontWeight: '800',
     color: '#1E293B',
     textTransform: 'uppercase',
@@ -646,10 +655,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 20,
-    marginTop: 32,
-    padding: 18,
-    borderRadius: 20,
+    marginHorizontal: scale(20),
+    marginTop: verticalScale(32),
+    padding: moderateScale(18),
+    borderRadius: moderateScale(20),
     backgroundColor: '#FFF5F5',
     gap: 12,
   },
@@ -658,7 +667,7 @@ const styles = StyleSheet.create({
   },
   luxeLogoutTxt: {
     color: '#EB5757',
-    fontSize: 16,
+    fontSize: moderateScale(16),
     fontWeight: '800',
   },
 });

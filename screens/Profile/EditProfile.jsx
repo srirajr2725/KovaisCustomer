@@ -15,6 +15,16 @@ import {
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { 
+  scale, 
+  verticalScale, 
+  moderateScale, 
+  SCREEN_WIDTH as width, 
+  SCREEN_HEIGHT as height,
+  isSmallMobile,
+  isMediumMobile,
+  isLargeMobile
+} from '../../utils/responsive';
 
 const EditProfile = ({ user, onSave, onCancel }) => {
   const [formData, setFormData] = useState({

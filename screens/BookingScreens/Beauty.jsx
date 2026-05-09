@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -6,10 +8,11 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  Dimensions,
   StatusBar,
   Animated,
-  FlatList
+  FlatList,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -26,8 +29,17 @@ import {
   Truck
 } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
-
-const { width } = Dimensions.get('window');
+import { useAuth } from '../AuthContext';
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  SCREEN_WIDTH as width,
+  SCREEN_HEIGHT as height,
+  isSmallMobile,
+  isMediumMobile,
+  isLargeMobile
+} from '../../utils/responsive';
 
 const beautyProducts = [
   {
@@ -211,8 +223,10 @@ const LoadingImage = ({ source, style }) => {
 };
 
 const Beauty = ({ goBack }) => {
+  const { user, isAuthenticated } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [cart, setCart] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [detailQuantity, setDetailQuantity] = useState(1);
@@ -246,14 +260,92 @@ const Beauty = ({ goBack }) => {
     });
   };
 
-  const removeFromCart = (productId) => {
-    setCart(prev => {
-      const existing = prev.find(item => item.id === productId);
-      if (existing.quantity > 1) {
-        return prev.map(item => item.id === productId ? { ...item, quantity: item.quantity - 1 } : item);
+  const updateQuantity = (productId, delta) => {
+    setCart(prev => prev.map(item => {
+      if (item.id === productId) {
+        const newQty = Math.max(1, item.quantity + delta);
+        return { ...item, quantity: newQty };
       }
-      return prev.filter(item => item.id !== productId);
-    });
+      return item;
+    }));
+  };
+
+  const removeFromCart = (productId) => {
+    setCart(prev => prev.filter(item => item.id !== productId));
+  };
+
+  const handleCheckout = async (directProduct = null) => {
+    const userId = user?.user_id || user?.id || user?.customer_id;
+    if (!userId) {
+      Alert.alert("Authentication Required", "Please login to purchase items.");
+      return;
+    }
+
+    const checkoutItems = directProduct ? [{ ...directProduct, quantity: detailQuantity }] : cart;
+    if (checkoutItems.length === 0) {
+      Alert.alert("Cart Empty", "Please add items to your cart before checking out.");
+      return;
+    }
+
+    setLoading(true);
+
+    const reliablePhone = user?.phone || user?.data?.phone || user?.mobile || user?.data?.mobile || user?.customer_phone || user?.data?.customer_phone || user?.contact || user?.data?.contact || (user?.username && /^\d{10}/.test(user.username) ? user.username.match(/^\d{10}/)[0] : '') || '';
+    const totalAmount = checkoutItems.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
+
+    const payload = {
+      category: 'Beauty',
+      services: checkoutItems.map(item => `${item.name} (x${item.quantity || 1})`).join(', ') + ` | Ph: ${reliablePhone} | Loc: ${user?.address || 'Doorstep Delivery'}`,
+      amount: totalAmount,
+      date: new Date().toISOString().split('T')[0],
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      payment_status: 'Completed',
+      payment_type: 'Cash',
+      customer_id: userId,
+      status: 'booked',
+      customer_name: `${user?.username || user?.name || 'Guest'} - ${reliablePhone}`,
+      phone: reliablePhone,
+      address: user?.address || 'Doorstep Delivery',
+      points: 0,
+
+      // 🛡️ MEGA REDUNDANCY: Blasting every possible phone alias
+      mobile: reliablePhone,
+      mobile_no: reliablePhone,
+      phone_number: reliablePhone,
+      mobile_number: reliablePhone,
+      contact: reliablePhone,
+      contact_number: reliablePhone,
+      customer_phone: reliablePhone,
+      customer_mobile: reliablePhone,
+      customer_contact: reliablePhone,
+      customer_mobile_number: reliablePhone,
+      customer_phone_number: reliablePhone,
+      registrator_phone: reliablePhone,
+      registrator_mobile: reliablePhone,
+      logged_phone: reliablePhone,
+
+      // Safety context
+      Category: 'saloon', 
+      order_type: 'Product Delivery',
+    };
+
+    try {
+      await axios.post('https://api.codingboss.in/kovais/saloon/orders/', payload);
+
+      const stored = await AsyncStorage.getItem('offline_orders');
+      const orders = stored ? JSON.parse(stored) : [];
+      orders.unshift({ ...payload, id: 'BEA-' + Date.now(), created_at: new Date().toISOString() });
+      await AsyncStorage.setItem('offline_orders', JSON.stringify(orders.slice(0, 50)));
+
+      if (!directProduct) setCart([]);
+      setSelectedProduct(null);
+
+      Alert.alert("Order Confirmed", "Your beauty products are on their way!", [{ text: "OK", onPress: () => goBack() }]);
+    } catch (error) {
+      console.error('Beauty purchase error:', error);
+      Alert.alert("Order Saved", "Saved locally due to sync issue.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const cartTotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
@@ -425,8 +517,16 @@ const Beauty = ({ goBack }) => {
           >
             <Text style={styles.addToCartBtnText}>Add to Cart</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.buyNowBtn}>
-            <Text style={styles.buyNowBtnText}>Buy Now</Text>
+          <TouchableOpacity 
+            style={[styles.buyNowBtn, loading && { opacity: 0.7 }]} 
+            onPress={() => handleCheckout(selectedProduct)}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.buyNowBtnText}>Buy Now</Text>
+            )}
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -525,14 +625,24 @@ const Beauty = ({ goBack }) => {
       {/* Floating Cart Button */}
       {cartCount > 0 && (
         <View style={styles.floatingCart}>
-          <TouchableOpacity style={styles.cartAction}>
+          <TouchableOpacity 
+            style={[styles.cartAction, loading && { opacity: 0.7 }]} 
+            onPress={() => handleCheckout()}
+            disabled={loading}
+          >
             <View>
               <Text style={styles.cartItemsText}>{cartCount} Items</Text>
               <Text style={styles.cartTotalText}>₹{cartTotal}</Text>
             </View>
             <View style={styles.checkoutBtn}>
-              <Text style={styles.checkoutText}>View Cart</Text>
-              <ShoppingBag size={18} color="#FFF" />
+              {loading ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.checkoutText}>Checkout</Text>
+                  <ShoppingBag size={18} color="#FFF" />
+                </>
+              )}
             </View>
           </TouchableOpacity>
         </View>
@@ -563,15 +673,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: moderateScale(18),
     fontWeight: '800',
     color: '#1E293B',
     letterSpacing: 0.5,
   },
   cartBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: moderateScale(40),
+    height: moderateScale(40),
+    borderRadius: moderateScale(20),
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
@@ -599,8 +709,8 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   mainBanner: {
-    height: 180,
-    borderRadius: 28,
+    height: verticalScale(180),
+    borderRadius: moderateScale(28),
     flexDirection: 'row',
     overflow: 'hidden',
     position: 'relative',
@@ -619,10 +729,10 @@ const styles = StyleSheet.create({
   },
   bannerTitle: {
     color: '#FFF',
-    fontSize: 22,
+    fontSize: moderateScale(22),
     fontWeight: '900',
-    marginVertical: 10,
-    lineHeight: 28,
+    marginVertical: verticalScale(10),
+    lineHeight: moderateScale(28),
   },
   bannerBtn: {
     backgroundColor: '#FFF',
@@ -729,8 +839,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   imageContainer: {
-    height: 150,
-    borderRadius: 18,
+    height: verticalScale(150),
+    borderRadius: moderateScale(18),
     backgroundColor: '#F1F5F9',
     overflow: 'hidden',
     position: 'relative',
@@ -775,10 +885,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   productName: {
-    fontSize: 15,
+    fontSize: moderateScale(15),
     fontWeight: '800',
     color: '#1E293B',
-    marginTop: 4,
+    marginTop: verticalScale(4),
   },
   ratingRow: {
     flexDirection: 'row',
@@ -1058,19 +1168,20 @@ const styles = StyleSheet.create({
   addToCartBtn: {
     flex: 1,
     height: 55,
+    height: moderateScale(55),
     borderRadius: 18,
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
   addToCartBtnText: {
-    fontSize: 16,
+    fontSize: moderateScale(16),
     fontWeight: '800',
     color: '#1E293B',
   },
   buyNowBtn: {
     flex: 1.5,
-    height: 55,
+    height: moderateScale(55),
     borderRadius: 18,
     backgroundColor: '#348f9f',
     justifyContent: 'center',

@@ -22,7 +22,7 @@ const Footer = () => {
         </View>
 
         <View style={styles.contactSection}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.contactItem}
             onPress={() => handlePress('tel', '9234567891')}
           >
@@ -32,7 +32,7 @@ const Footer = () => {
             <Text style={styles.contactText}>+91 92345 67891</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.contactItem}
             onPress={() => handlePress('mailto', 'info@kovaisbeauty.com')}
           >

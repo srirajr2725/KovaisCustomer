@@ -11,14 +11,49 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);   // initial loading state
 
   // 🔄 Normalize user data so you never have mismatched structures
-const normalizeUser = (data) => {
-  const user = data?.data ? data.data : data;
+  const normalizeUser = (data) => {
+    const user = data?.data ? data.data : data;
 
-  return {
-    ...user,
-    user_id: user.user_id || user.id || user.customer_id || null, // ✅ ensures user_id always exists
+    // 📞 Mega-Aggressive Phone Detection: Scans every property for a 10-digit sequence
+    const scanForPhone = (obj) => {
+      if (!obj) return '';
+      // 🛡️ High-Priority Fields (Account-First)
+      const primaryKeys = ['registrator_phone', 'loginIdentifier', 'phone', 'mobile', 'customer_phone'];
+      for (const pk of primaryKeys) {
+          const val = obj[pk];
+          if (val) {
+              const cleaned = String(val).replace(/[^0-9]/g, '');
+              if (cleaned.length >= 10) return cleaned.slice(-10);
+          }
+      }
+      // 🔄 Fallback aliases
+      const phoneKeys = ['contact', 'mobile_no', 'phone_number', 'mobile_number', 'phoneNumber', 'contact_number', 'customer_mobile'];
+      for (const key of phoneKeys) {
+        const val = obj[key];
+        if (val) {
+          const cleaned = String(val).replace(/[^0-9]/g, '');
+          if (cleaned.length >= 10) return cleaned.slice(-10);
+        }
+      }
+      // 🔍 Deep scan for 10 digits in username/email/name
+      const rawContent = String(obj.username || obj.name || obj.email || '');
+      const match = rawContent.match(/\d{10}/);
+      if (match) return match[0];
+      return '';
+    };
+
+    const finalPhone = scanForPhone(user) || scanForPhone(user.data) || '';
+
+    return {
+      ...user,
+      user_id: user.user_id || user.id || user.customer_id || null, // ✅ ensures user_id always exists
+      phone: finalPhone, // strictly using discovered phone
+      mobile: finalPhone,
+      customer_phone: finalPhone,
+      mobile_no: finalPhone,
+      logged_phone: finalPhone
+    };
   };
-};
 
 
   // 🔐 Check stored auth on startup or when explicitly called

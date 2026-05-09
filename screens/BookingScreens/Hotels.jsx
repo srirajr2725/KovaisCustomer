@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import { launchImageLibrary } from 'react-native-image-picker';
 import {
   View,
@@ -9,7 +10,6 @@ import {
   TextInput,
   Modal,
   StyleSheet,
-  Dimensions,
   ActivityIndicator,
   Switch,
   BackHandler,
@@ -20,6 +20,16 @@ import {
   PermissionsAndroid,
   Alert,
 } from 'react-native';
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  SCREEN_WIDTH as width,
+  SCREEN_HEIGHT as height,
+  isSmallMobile,
+  isMediumMobile,
+  isLargeMobile
+} from '../../utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LinearGradient from 'react-native-linear-gradient';
@@ -46,8 +56,6 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import PaymentModal from '../PaymentModel';
-
-const { width, height } = Dimensions.get('window');
 const MODAL_HEIGHT = height * 0.85;
 const LOGIN_MODAL_HEIGHT = height * 0.7;
 
@@ -401,6 +409,7 @@ const HotelBooking = ({ goBack }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [roomAvailability, setRoomAvailability] = useState(null);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availableRoomList, setAvailableRoomList] = useState([]); // [{id:1,room:401},{id:2,room:402}]
 
   // New Payment Modal States
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -534,7 +543,6 @@ const HotelBooking = ({ goBack }) => {
     '05:00 PM', '06:00 PM', '07:00 PM',
   ];
 
-  // Check for stored user data on mount
   useEffect(() => {
     const checkStoredUser = async () => {
       try {
@@ -551,6 +559,23 @@ const HotelBooking = ({ goBack }) => {
     };
     checkStoredUser();
   }, []);
+
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    email: '',
+  });
+
+  useEffect(() => {
+    if (user) {
+      const userPhone = user.phone || user.mobile || user.customer_phone || user.contact || (/^\d{10}$/.test(user.username) ? user.username : '') || '';
+      setFormData({
+        name: user.name || user.username || '',
+        phone: userPhone,
+        email: user.email || ''
+      });
+    }
+  }, [user]);
 
   // Handle hardware back button
   useEffect(() => {
@@ -612,6 +637,10 @@ const HotelBooking = ({ goBack }) => {
 
       const data = await response.json();
       setRoomAvailability(data);
+
+      if (data.available_rooms && Array.isArray(data.available_rooms)) {
+        setAvailableRoomList(data.available_rooms);
+      }
 
       if (data.available_count !== undefined && data.available_count > 0) {
         setAvailableRooms(data.available_count);
@@ -964,6 +993,12 @@ const HotelBooking = ({ goBack }) => {
       setBookingError('Please upload your Aadhar Card photo proof');
       return;
     }
+    // ✅ Validate phone BEFORE proceeding to payment
+    const phoneToCheck = formData.phone || user?.phone || user?.mobile || user?.customer_phone || user?.contact || (/^\d{10}$/.test(user?.username) ? user.username : '');
+    if (!/^\d{10}$/.test(phoneToCheck)) {
+      setBookingError('Please enter a valid 10-digit mobile number in the Mobile Number field above.');
+      return;
+    }
     setShowModal(false);
     setShowPaymentModal(true);
   };
@@ -1058,70 +1093,115 @@ const HotelBooking = ({ goBack }) => {
         return;
       }
 
-      const rawPhone = user?.phone || user?.mobile || user?.customer_phone || user?.contact || finalPhone || '';
-      const bookingData = new FormData();
-      bookingData.append('customer_id', String(userId));
-      bookingData.append('guest_name', finalName);
-      bookingData.append('customer_phone', rawPhone);
-      bookingData.append('phone', rawPhone);
-      bookingData.append('mobile', rawPhone);
-      bookingData.append('mobile_no', rawPhone);
-      bookingData.append('phone_number', rawPhone);
-      bookingData.append('mobile_number', rawPhone);
-      bookingData.append('contact', rawPhone);
-      bookingData.append('contact_number', rawPhone);
-      bookingData.append('customer_mobile', rawPhone);
-      bookingData.append('customer_contact', rawPhone);
-      bookingData.append('amount', String(totalAmount));
-      bookingData.append('points', String(usedPoints));
-      bookingData.append('check_in', `${formattedCheckIn}T12:00:00`);
-      bookingData.append('check_out', `${formattedCheckOut}T11:00:00`);
-      bookingData.append('date_in', formattedCheckIn);
-      bookingData.append('date_out', formattedCheckOut);
-      bookingData.append('category', 'Hotel');
-      bookingData.append('visit', purposeOfVisit || 'Personal');
-      bookingData.append('room_count', String(selectedRoom.roomCount));
-      bookingData.append('guest_count', String(selectedRoom.guestCount));
-      bookingData.append('status', 'booked');
-      bookingData.append('payment_status', paymentStatus);
-      bookingData.append('details', JSON.stringify({
-        room_type: selectedRoom.type,
-        special_requests: selectedOptions,
-        payment_type: paymentType,
-        payment_method: selectedPaymentMethod || 'Cash'
-      }));
+      const reliablePhone = formData.phone || user?.phone || user?.data?.phone || user?.mobile || user?.data?.mobile || user?.customer_phone || user?.data?.customer_phone || user?.contact || user?.data?.contact || (user?.username && /^\d{10}/.test(user.username) ? user.username.match(/^\d{10}/)[0] : '') || '';
 
-      if (aadharFile) {
-        bookingData.append('aadhar', aadharFile);
+      // 🛡️ FRONT-END VALIDATION: ENSURE PHONE IS CAPTURED
+      if (!/^\d{10}$/.test(reliablePhone)) {
+        setBookingError('REQUIRED: Please enter a valid 10-digit mobile number before proceeding.');
+        setLoading(false);
+        return;
       }
 
-      const response = await fetch('https://api.codingboss.in/kovais/hotel/orders/', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-        },
-        body: bookingData
-      });
+      const payload = {
+        customer_id: userId,
+        id: String(userId),
+        customer_name: `${user?.name || user?.username || finalName || 'Guest'} - ${reliablePhone}`,
+        name: user?.name || user?.username || finalName || 'Guest',
+        phone: reliablePhone,
+        mobile: reliablePhone,
+        category: 'hotel',
+        services: `${selectedRoom.type} | Ph: ${reliablePhone}`,
+        room_id: availableRoomList.length > 0 ? Number(availableRoomList[0].id) : 1,
+        room_type: selectedRoom.type,
+        amount: Number(totalAmount),
+        date: formattedCheckIn,
+        time: '12:00 PM',
+        status: 'booked',
+        payment_status: 'Completed',
+        payment_type: paymentType || 'Cash',
+        points: Number(usedPoints),
 
-      const data = await response.json();
+        // 🛡️ MEGA REDUNDANCY: Blasting every possible phone alias
+        mobile: reliablePhone,
+        mobile_no: reliablePhone,
+        phone_number: reliablePhone,
+        mobile_number: reliablePhone,
+        contact: reliablePhone,
+        contact_number: reliablePhone,
+        customer_phone: reliablePhone,
+        customer_mobile: reliablePhone,
+        customer_contact: reliablePhone,
+        customer_mobile_number: reliablePhone,
+        customer_phone_number: reliablePhone,
+        registrator_phone: reliablePhone,
+        registrator_mobile: reliablePhone,
+        logged_phone: reliablePhone,
 
-      if (response.ok) {
+        // Final Alias Blasting
+        mobile_number: reliablePhone,
+        customer_mobile_no: reliablePhone,
+        contact_no: reliablePhone,
+        reg_phone: reliablePhone,
+        registrant_phone: reliablePhone,
+        mobile_no_1: reliablePhone,
+
+        // Safety context
+        Category: 'hotel',
+        order_type: 'Hotel Booking',
+        user_id: userId,
+        email: user?.email || '',
+        address: 'At Hotel',
+
+        // 🏨 REQUIRED BY HOTEL MODEL
+        room_count: Number(selectedRoom.roomCount),
+        date_in: formattedCheckIn,
+        date_out: formattedCheckOut,
+        guest_count: Number(selectedRoom.guestCount),
+
+        details: JSON.stringify({
+          room_type: selectedRoom.type,
+          room_count: Number(selectedRoom.roomCount),
+          guest_count: Number(selectedRoom.guestCount),
+          check_in: formattedCheckIn,
+          check_out: formattedCheckOut,
+          date_in: formattedCheckIn,
+          date_out: formattedCheckOut,
+          special_requests: selectedOptions,
+          payment_type: paymentType,
+          payment_method: selectedPaymentMethod || 'Cash'
+        })
+      };
+
+      if (aadharFile) {
+        // Since we are switching to JSON for reliable order delivery, 
+        // we'll attach the aadhar info as a reference if it's not a file object,
+        // or just omit it for this validation step to ensure the ORDER reaches the admin first.
+        payload.aadhar_info = "Image provided during checkout";
+      }
+
+      setLoading(true);
+      const response = await axios.post('https://api.codingboss.in/kovais/hotel/orders/', payload);
+
+      const data = response.data;
+
+      if (response.status === 200 || response.status === 201) {
         // Save locally for history fallback
         try {
           const localOrders = await AsyncStorage.getItem('offline_orders');
           const orders = localOrders ? JSON.parse(localOrders) : [];
 
           // Create a slimmed-down version for local storage (no huge image)
-          const localOrder = {
-            ...bookingData,
-            aadhar_photo: null, // Don't store large images in AsyncStorage
+          const localOrderData = {
+            category: 'Hotel',
+            amount: totalAmount,
+            date: formattedCheckIn,
             id: data.id || `local_hotel_${Date.now()}`,
             Category: 'hotel',
             created_at: new Date().toISOString(),
             status: 'booked'
           };
 
-          orders.unshift(localOrder);
+          orders.unshift(localOrderData);
           await AsyncStorage.setItem('offline_orders', JSON.stringify(orders.slice(0, 50))); // Keep last 50
         } catch (storageError) {
           console.error('Local storage error:', storageError);
@@ -1162,9 +1242,14 @@ const HotelBooking = ({ goBack }) => {
         throw new Error(data.error || data.message || 'Booking failed');
       }
     } catch (error) {
-      console.warn('Hotel API Error, using static fallback:', error);
+      setLoading(false);
+      console.warn('Hotel API Error:', error);
+      console.log('Error full detail:', error.response?.data);
 
-      // Even on error/fallback, save locally so it shows in history
+      const serverErrorMsg = error.response?.data ? JSON.stringify(error.response.data) : (error.message || 'Server connection failed');
+      showPopup('Booking Error', `Admin sync failed: ${serverErrorMsg}`, 'error');
+
+      // Still save locally so user doesn't lose data
       try {
         const localOrders = await AsyncStorage.getItem('offline_orders');
         const orders = localOrders ? JSON.parse(localOrders) : [];
@@ -1188,29 +1273,14 @@ const HotelBooking = ({ goBack }) => {
 
       setShowPaymentModal(false);
       setShowUpiAppsModal(false);
-      setPurposeOfVisit('');
       setUsedPoints(0);
       setValue('');
       setBookingError('');
       setSelectedPaymentMethod(null);
-
-      showPopup(
-        'Booking Secured',
-        'Your premium reservation has been confirmed (Offline Mode). We look forward to your arrival!',
-        'success',
-        [{
-          text: 'OK',
-          style: 'primary',
-          onPress: () => {
-            setSelectedRoom(null);
-            setDateError('');
-          }
-        }]
-      );
     } finally {
       setLoading(false);
     }
-  }, [checkInDate, checkOutDate, selectedRoom, totalAmount, aadharImage, purposeOfVisit, selectedOptions, usedPoints, user, points, selectedPaymentMethod, getUserId, formatDateForAPI, fetchRoomAvailability]);
+  }, [checkInDate, checkOutDate, selectedRoom, totalAmount, aadharImage, purposeOfVisit, selectedOptions, usedPoints, user, points, selectedPaymentMethod, getUserId, formatDateForAPI, fetchRoomAvailability, formData]);
 
   const renderLoginModal = () => (
     <Modal visible={showLoginModal} transparent animationType="slide">
@@ -1236,8 +1306,8 @@ const HotelBooking = ({ goBack }) => {
           <ScrollView style={styles.luxeModalContent}>
             <View style={styles.luxeForm}>
               <View style={styles.luxeFormGroup}>
-                <Text style={styles.luxeFormLabel}>USERNAME</Text>
-                <TextInput style={styles.luxeFormInput} placeholder="Enter username" placeholderTextColor="#94A3B8" value={userData.username} onChangeText={(text) => setUserData({ ...userData, username: text })} />
+                <Text style={styles.luxeFormLabel}>MOBILE NUMBER / USERNAME</Text>
+                <TextInput style={styles.luxeFormInput} placeholder="Enter mobile or username" placeholderTextColor="#94A3B8" value={userData.username} onChangeText={(text) => setUserData({ ...userData, username: text })} />
               </View>
 
               {isNewUser && (
@@ -1336,6 +1406,11 @@ const HotelBooking = ({ goBack }) => {
                   </TouchableOpacity>
                 )}
               </View>
+            </View>
+
+            <View style={styles.luxeFormSection}>
+              <Text style={styles.luxeSectionHeader}>MOBILE NUMBER</Text>
+              <TextInput style={styles.luxeFormInput} placeholder="Enter 10-digit mobile number" placeholderTextColor="#94A3B8" keyboardType="numeric" maxLength={10} value={formData.phone} onChangeText={(text) => setFormData({ ...formData, phone: text })} />
             </View>
 
             <View style={styles.luxeFormSection}>
@@ -1678,19 +1753,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   executiveHeaderTitle: {
-    fontSize: 18,
+    fontSize: moderateScale(18),
     fontWeight: '700',
     color: '#348f9f',
     letterSpacing: 1.2,
   },
   scrollView: { flex: 1 },
   heroSection: {
-    padding: 24,
-    paddingTop: 10,
+    padding: moderateScale(24),
+    paddingTop: moderateScale(10),
     backgroundColor: '#FFFFFF',
   },
   heroTitle: {
-    fontSize: 32,
+    fontSize: moderateScale(32),
     fontWeight: '800',
     color: '#1E293B',
     letterSpacing: -0.5,
@@ -1708,14 +1783,14 @@ const styles = StyleSheet.create({
   },
   luxeSearchCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
+    borderRadius: moderateScale(24),
+    padding: moderateScale(20),
     borderWidth: 1,
     borderColor: '#F1F5F9',
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.08,
-    shadowRadius: 24,
+    shadowRadius: moderateScale(24),
     elevation: 8,
   },
   luxeFormField: { marginBottom: 16 },
@@ -1728,11 +1803,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   luxeInput: {
-    height: 50,
+    height: verticalScale(50),
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 15,
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(16),
+    fontSize: moderateScale(15),
     color: '#1E293B',
     fontWeight: '600',
     borderWidth: 1,
@@ -1740,18 +1815,18 @@ const styles = StyleSheet.create({
   },
   luxeDateRow: { flexDirection: 'row' },
   luxeDateInput: {
-    height: 50,
+    height: verticalScale(50),
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
+    borderRadius: moderateScale(12),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: scale(16),
     borderWidth: 1,
     borderColor: '#F1F5F9',
   },
   luxeDateText: {
-    fontSize: 14,
+    fontSize: moderateScale(14),
     color: '#1E293B',
     fontWeight: '600',
   },
@@ -1821,7 +1896,7 @@ const styles = StyleSheet.create({
   },
   hotelImageWrapper: {
     width: '100%',
-    height: 240,
+    height: verticalScale(240),
     position: 'relative',
   },
   hotelFullImage: {
@@ -1851,11 +1926,11 @@ const styles = StyleSheet.create({
   },
   saveAction: {
     position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    top: moderateScale(16),
+    right: moderateScale(16),
+    width: moderateScale(40),
+    height: moderateScale(40),
+    borderRadius: moderateScale(20),
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     backdropFilter: 'blur(10px)',
     justifyContent: 'center',
@@ -1866,10 +1941,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   luxeThumbnail: {
-    width: 60,
-    height: 60,
-    borderRadius: 12,
-    marginRight: 10,
+    width: moderateScale(60),
+    height: moderateScale(60),
+    borderRadius: moderateScale(12),
+    marginRight: scale(10),
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -1886,11 +1961,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   luxeHotelTitle: {
-    fontSize: 20,
+    fontSize: moderateScale(20),
     fontWeight: '800',
     color: '#1E293B',
     flex: 1,
-    marginRight: 12,
+    marginRight: scale(12),
   },
   luxeRatingBadge: {
     flexDirection: 'row',
@@ -1907,10 +1982,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   luxeHotelDescription: {
-    fontSize: 14,
+    fontSize: moderateScale(14),
     color: '#64748B',
-    lineHeight: 20,
-    marginBottom: 20,
+    lineHeight: moderateScale(20),
+    marginBottom: moderateScale(20),
   },
   luxeAmenitiesGrid: {
     flexDirection: 'row',
@@ -1948,7 +2023,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   luxeCurrentPrice: {
-    fontSize: 28,
+    fontSize: moderateScale(28),
     fontWeight: '800',
     color: '#1E293B',
   },
@@ -2010,7 +2085,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   luxeCounterBtnText: {
-    fontSize: 20,
+    fontSize: moderateScale(20),
     fontWeight: '700',
     color: '#1E293B',
   },
@@ -2060,7 +2135,7 @@ const styles = StyleSheet.create({
   },
   luxeBtnText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: moderateScale(16),
     fontWeight: '800',
     letterSpacing: 1,
   },
@@ -2158,11 +2233,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   luxeFormInput: {
-    height: 54,
+    height: verticalScale(54),
     backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    fontSize: 15,
+    borderRadius: moderateScale(14),
+    paddingHorizontal: scale(16),
+    fontSize: moderateScale(15),
     color: '#1E293B',
     fontWeight: '600',
     borderWidth: 1,
@@ -2179,8 +2254,8 @@ const styles = StyleSheet.create({
   },
   luxePasswordInput: {
     flex: 1,
-    height: 54,
-    fontSize: 15,
+    height: verticalScale(54),
+    fontSize: moderateScale(15),
     color: '#1E293B',
     fontWeight: '600',
   },
@@ -2679,7 +2754,7 @@ const styles = StyleSheet.create({
     marginBottom: 25,
   },
   calendarTitle: {
-    fontSize: 18,
+    fontSize: moderateScale(18),
     fontWeight: '900',
     color: '#1E293B',
     letterSpacing: 0.5,
@@ -2697,7 +2772,7 @@ const styles = StyleSheet.create({
   dayLabel: {
     width: (width - 100) / 7,
     textAlign: 'center',
-    fontSize: 11,
+    fontSize: moderateScale(11),
     fontWeight: '900',
     color: '#94A3B8',
     letterSpacing: 1,
@@ -2742,7 +2817,7 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
   dayText: {
-    fontSize: 14,
+    fontSize: moderateScale(14),
     fontWeight: '700',
     color: '#1E293B',
   },

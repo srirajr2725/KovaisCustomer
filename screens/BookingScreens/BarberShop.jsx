@@ -88,7 +88,7 @@ const BarberShop = ({ goBack }) => {
 
   useEffect(() => {
     if (user) {
-      const userPhone = user.phone || user.mobile || user.customer_phone || user.contact || '';
+      const userPhone = user.phone || user.mobile || user.customer_phone || user.contact || (/^\d{10}$/.test(user.username) ? user.username : '') || '';
       setFormData(prev => ({
         ...prev,
         name: user.name || user.username || '',
@@ -160,8 +160,15 @@ const BarberShop = ({ goBack }) => {
     const userId = user?.user_id || user?.id || user?.customer_id;
     if (!userId) { Alert.alert("Login Required", "Please login to book a service."); return; }
     if (selectedServices.length === 0) { Alert.alert("Selection Required", "Please select at least one barber or parlour service."); return; }
-    if (!formData.phone) { Alert.alert("Phone Required", "Please provide a contact phone number for the barber."); return; }
-    if (bookingType === 'Door Step' && !formData.address) { Alert.alert("Address Required", "Please provide the home or office address for service."); return; }
+
+    const storedPhone = user?.phone || user?.data?.phone || user?.mobile || user?.data?.mobile || user?.customer_phone || user?.data?.customer_phone || user?.contact || '';
+    const finalPhone = formData.phone || storedPhone;
+
+    if (!finalPhone) { Alert.alert("Phone Required", "Please provide a contact phone number for the barber."); return; }
+
+    const finalAddress = (bookingType === 'Door Step' && formData.address?.trim()) ? formData.address : (user?.address || user?.data?.address || '');
+
+    if (bookingType === 'Door Step' && !finalAddress) { Alert.alert("Address Required", "Please provide the home or office address for service."); return; }
 
     if (paymentMethod === 'GPay') {
       setShowUpiAppsModal(true);
@@ -188,36 +195,43 @@ const BarberShop = ({ goBack }) => {
     const totalAmount = selectedServices.reduce((sum, s) => sum + s.price, 0);
     const locationFee = bookingType === 'Door Step' ? 200 : 0;
     const finalAmount = totalAmount + locationFee;
+    const reliablePhone = user?.phone || user?.mobile || user?.customer_phone || formData.phone || (user?.username && /^\d{10}/.test(user.username) ? user.username : '') || '';
+    const finalAddress = (bookingType === 'Door Step' && formData.address?.trim()) ? formData.address : (user?.address || user?.data?.address || '');
 
     const payload = {
-      customer_id: userId,
-      customer: userId,
-      user_id: userId,
-      user: userId,
-      customer_name: formData.name || 'Valued Guest',
-      customer_phone: formData.phone,
-      mobile: formData.phone,
-      phone: formData.phone,
-      mobile_no: formData.phone,
-      phone_number: formData.phone,
-      mobile_number: formData.phone,
-      contact: formData.phone,
-      contact_number: formData.phone,
-      customer_mobile: formData.phone,
-      customer_contact: formData.phone,
-      customer_mobile_number: formData.phone,
-      customer_phone_number: formData.phone,
-      address: bookingType === 'Door Step' ? formData.address : 'At Salon',
-      services: `[Gender: ${selectedGender} | Barber: ${selectedBarber}] ` + selectedServices.map(s => s.name).join(', '),
+      category: selectedGender === 'Gentlemen' ? 'Gents' : 'Ladies',
+      services: selectedServices.map(s => s.name).join(', '),
       amount: finalAmount,
       date: selectedDate,
       time: selectedTime,
+      payment_status: 'Completed',
+      payment_type: paymentMethod || 'Cash',
+      customer_id: userId,
       status: 'booked',
-      category: 'Barber',
+      customer_name: user?.username || 'Guest',
+      phone: reliablePhone,
+      points: 0,
+
+      // 🛡️ MEGA REDUNDANCY: Blasting every possible phone alias
+      mobile: reliablePhone,
+      mobile_no: reliablePhone,
+      phone_number: reliablePhone,
+      mobile_number: reliablePhone,
+      contact: reliablePhone,
+      contact_number: reliablePhone,
+      customer_phone: reliablePhone,
+      customer_mobile: reliablePhone,
+      customer_contact: reliablePhone,
+      customer_mobile_number: reliablePhone,
+      customer_phone_number: reliablePhone,
+      registrator_phone: reliablePhone,
+      registrator_mobile: reliablePhone,
+      logged_phone: reliablePhone,
+
+      // Safety context
       Category: 'saloon',
       order_type: bookingType,
-      payment_status: 'Completed',
-      payment_type: paymentMethod
+      address: bookingType === 'Door Step' ? finalAddress : 'At Salon',
     };
 
     try {
@@ -361,16 +375,6 @@ const BarberShop = ({ goBack }) => {
                 />
               </View>
             )}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Contact Phone</Text>
-              <TextInput
-                style={styles.input}
-                keyboardType="phone-pad"
-                placeholder="Where should we call you?"
-                value={formData.phone}
-                onChangeText={(t) => setFormData(p => ({ ...p, phone: t }))}
-              />
-            </View>
             <Text style={styles.label}>Appointment Date</Text>
             <TouchableOpacity style={styles.input} disabled>
               <Text style={{ color: '#1E293B' }}>{selectedDate}</Text>

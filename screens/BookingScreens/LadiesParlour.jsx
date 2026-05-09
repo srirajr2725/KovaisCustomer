@@ -8,7 +8,6 @@ import {
   TextInput,
   Modal,
   StyleSheet,
-  Dimensions,
   ActivityIndicator,
   StatusBar,
   BackHandler,
@@ -24,21 +23,48 @@ import {
   ChevronRight,
   ChevronLeft,
   Sparkles,
-  Heart
+  Heart,
+  Clock
 } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { Calendar } from 'react-native-calendars';
 import { useAuth } from '../AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import * as Animatable from 'react-native-animatable';
-import { Clock } from 'lucide-react-native';
-const { width, height } = Dimensions.get('window');
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  SCREEN_WIDTH as width,
+  SCREEN_HEIGHT as height,
+  isSmallMobile,
+  isMediumMobile,
+  isLargeMobile
+} from '../../utils/responsive';
+
 const API_BASE_URL = 'https://api.codingboss.in/kovais/saloon';
 
 const LadiesParlour = ({ goBack }) => {
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated } = useAuth();
   const navigation = useNavigation();
+
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    email: '',
+  });
+
+  useEffect(() => {
+    if (user) {
+      const userPhone = user.phone || user.mobile || user.customer_phone || user.contact || (/^\d{10}$/.test(user.username) ? user.username : '') || '';
+      setFormData({
+        name: user.name || user.username || '',
+        phone: userPhone,
+        email: user.email || ''
+      });
+    }
+  }, [user]);
 
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedServices, setSelectedServices] = useState([]);
@@ -90,37 +116,48 @@ const LadiesParlour = ({ goBack }) => {
       return;
     }
 
-    const userPhone = user?.phone || user?.mobile || user?.customer_phone || user?.contact || '';
-    const orderPayload = {
-      order_type: location === 'doorstep' ? 'Door Step' : 'Salon',
-      category: 'Ladies',
-      services: selectedServices.map((s) => s.name).join(', '),
+    const reliablePhone = formData.phone || user?.phone || user?.data?.phone || user?.mobile || user?.data?.mobile || user?.customer_phone || user?.data?.customer_phone || user?.contact || user?.data?.contact || (user?.username && /^\d{10}/.test(user.username) ? user.username.match(/^\d{10}/)[0] : '') || '';
+    const finalAddress = (location === 'doorstep' && address?.trim()) ? address : (user?.address || user?.data?.address || 'At Salon');
+
+    const payload = {
+      category: 'Ladies' + (location === 'doorstep' ? ' - DOOR STEP' : ''),
+      services: selectedServices.map((s) => s.name).join(', ') + ` | Ph: ${reliablePhone} | Loc: ${finalAddress || 'Salon'}`,
       amount: totalAmount,
       date: selectedDate,
       time: selectedTime,
-      payment_status: 'booked',
+      payment_status: 'Completed', // Barber Pattern
       payment_type: 'Cash',
       customer_id: userId,
       status: 'booked',
-      customer_name: user?.name || user?.username || 'Valued Guest',
-      customer_phone: userPhone,
-      mobile: userPhone,
-      phone: userPhone,
-      mobile_no: userPhone,
-      phone_number: userPhone,
-      mobile_number: userPhone,
-      contact: userPhone,
-      contact_number: userPhone,
-      customer_mobile: userPhone,
-      customer_contact: userPhone,
-      customer_mobile_number: userPhone,
-      customer_phone_number: userPhone,
-      address: location === 'doorstep' ? address : 'At Salon',
+      customer_name: `${user?.username || 'Guest'} - ${reliablePhone}`,
+      phone: reliablePhone,
+      points: 0,
+
+      // 🛡️ MEGA REDUNDANCY: Blasting every possible phone alias
+      mobile: reliablePhone,
+      mobile_no: reliablePhone,
+      phone_number: reliablePhone,
+      mobile_number: reliablePhone,
+      contact: reliablePhone,
+      contact_number: reliablePhone,
+      customer_phone: reliablePhone,
+      customer_mobile: reliablePhone,
+      customer_contact: reliablePhone,
+      customer_mobile_number: reliablePhone,
+      customer_phone_number: reliablePhone,
+      registrator_phone: reliablePhone,
+      registrator_mobile: reliablePhone,
+      logged_phone: reliablePhone,
+
+      // Safety context
+      Category: 'saloon',
+      order_type: location === 'doorstep' ? 'Door Step' : 'Salon',
+      address: location === 'doorstep' ? finalAddress : 'At Salon',
     };
 
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE_URL}/orders/`, orderPayload);
+      const response = await axios.post(`${API_BASE_URL}/orders/`, payload);
       const orderData = response.data || {};
       const orderId = orderData.order?.id || orderData.id || orderData.data?.id || 'LADY-' + Math.floor(Math.random() * 100000);
 
@@ -129,7 +166,7 @@ const LadiesParlour = ({ goBack }) => {
         const localOrders = await AsyncStorage.getItem('offline_orders');
         const orders = localOrders ? JSON.parse(localOrders) : [];
         orders.push({
-          ...orderPayload,
+          ...payload,
           id: orderId,
           Category: 'saloon',
           created_at: new Date().toISOString()
@@ -370,69 +407,69 @@ const LadiesParlour = ({ goBack }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '900', color: '#FF4757', letterSpacing: 1 },
-  bannerContainer: { height: 280, position: 'relative' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: scale(20), paddingVertical: verticalScale(15), borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  backBtn: { width: moderateScale(40), height: moderateScale(40), borderRadius: moderateScale(20), backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: moderateScale(20), fontWeight: '900', color: '#FF4757', letterSpacing: 1 },
+  bannerContainer: { height: verticalScale(280), position: 'relative' },
   bannerImg: { width: '100%', height: '100%' },
-  bannerOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 25 },
-  bannerBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, marginBottom: 10, gap: 5 },
-  bannerBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
-  bannerSubtitle: { color: '#FFD700', fontSize: 12, fontWeight: '800', letterSpacing: 3, textTransform: 'uppercase' },
-  bannerTitle: { color: '#FFF', fontSize: 32, fontWeight: '950' },
-  stepContainer: { flexDirection: 'row', padding: 25, justifyContent: 'center' },
+  bannerOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: moderateScale(25) },
+  bannerBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', alignSelf: 'flex-start', paddingHorizontal: scale(10), paddingVertical: verticalScale(5), borderRadius: moderateScale(20), marginBottom: verticalScale(10), gap: 5 },
+  bannerBadgeText: { color: '#FFF', fontSize: moderateScale(10), fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
+  bannerSubtitle: { color: '#FFD700', fontSize: moderateScale(12), fontWeight: '800', letterSpacing: 3, textTransform: 'uppercase' },
+  bannerTitle: { color: '#FFF', fontSize: moderateScale(32), fontWeight: '950' },
+  stepContainer: { flexDirection: 'row', padding: moderateScale(25), justifyContent: 'center' },
   stepWrapper: { flexDirection: 'row', alignItems: 'center' },
-  stepDot: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+  stepDot: { width: moderateScale(32), height: moderateScale(32), borderRadius: moderateScale(16), backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   stepDotActive: { backgroundColor: '#FF4757', borderColor: '#FF4757' },
-  stepText: { color: '#94A3B8', fontWeight: '900', fontSize: 13 },
+  stepText: { color: '#94A3B8', fontWeight: '900', fontSize: moderateScale(13) },
   stepTextActive: { color: '#FFF' },
-  stepLine: { width: 50, height: 3, backgroundColor: '#F1F5F9', marginHorizontal: 8, borderRadius: 2 },
+  stepLine: { width: scale(50), height: verticalScale(3), backgroundColor: '#F1F5F9', marginHorizontal: scale(8), borderRadius: 2 },
   stepLineActive: { backgroundColor: '#FF4757' },
-  section: { paddingHorizontal: 20 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  sectionTitle: { fontSize: 22, fontWeight: '900', color: '#2D3436' },
-  sectionBadge: { fontSize: 12, fontWeight: '700', color: '#FF4757', backgroundColor: '#FFF5F6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  locationToggle: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 16, padding: 6, marginBottom: 25 },
-  toggleBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 12 },
+  section: { paddingHorizontal: scale(20) },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: verticalScale(20) },
+  sectionTitle: { fontSize: moderateScale(22), fontWeight: '900', color: '#2D3436' },
+  sectionBadge: { fontSize: moderateScale(12), fontWeight: '700', color: '#FF4757', backgroundColor: '#FFF5F6', paddingHorizontal: scale(12), paddingVertical: verticalScale(6), borderRadius: moderateScale(12) },
+  locationToggle: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: moderateScale(16), padding: moderateScale(6), marginBottom: verticalScale(25) },
+  toggleBtn: { flex: 1, paddingVertical: verticalScale(12), alignItems: 'center', borderRadius: moderateScale(12) },
   toggleBtnActive: { backgroundColor: '#FFFFFF', elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
-  toggleText: { fontSize: 14, fontWeight: '800', color: '#94A3B8' },
+  toggleText: { fontSize: moderateScale(14), fontWeight: '800', color: '#94A3B8' },
   toggleTextActive: { color: '#FF4757' },
-  serviceCard: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 24, padding: 16, marginBottom: 16, elevation: 2, alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 15 },
+  serviceCard: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: moderateScale(24), padding: moderateScale(16), marginBottom: verticalScale(16), elevation: 2, alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 15 },
   serviceCardActive: { borderWidth: 2, borderColor: '#FF4757', backgroundColor: '#FFF5F6', transform: [{ scale: 1.02 }] },
-  serviceImg: { width: 75, height: 75, borderRadius: 18 },
-  serviceInfo: { flex: 1, marginLeft: 18 },
-  serviceName: { fontSize: 17, fontWeight: '900', color: '#2D3436' },
-  serviceMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
-  serviceDuration: { fontSize: 13, color: '#94A3B8', fontWeight: '600' },
-  servicePrice: { fontSize: 18, fontWeight: '900', color: '#FF4757', marginTop: 6 },
-  checkIcon: { marginLeft: 10 },
-  dateScroll: { gap: 15, paddingBottom: 5 },
-  dateBtn: { width: 65, height: 85, borderRadius: 20, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
+  serviceImg: { width: scale(75), height: scale(75), borderRadius: moderateScale(18) },
+  serviceInfo: { flex: 1, marginLeft: scale(18) },
+  serviceName: { fontSize: moderateScale(17), fontWeight: '900', color: '#2D3436' },
+  serviceMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: verticalScale(5) },
+  serviceDuration: { fontSize: moderateScale(13), color: '#94A3B8', fontWeight: '600' },
+  servicePrice: { fontSize: moderateScale(18), fontWeight: '900', color: '#FF4757', marginTop: verticalScale(6) },
+  checkIcon: { marginLeft: scale(10) },
+  dateScroll: { gap: scale(15), paddingBottom: 5 },
+  dateBtn: { width: scale(65), height: verticalScale(85), borderRadius: moderateScale(20), backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
   dateBtnActive: { backgroundColor: '#FF4757', borderColor: '#FF4757', elevation: 8, shadowColor: '#FF4757', shadowOpacity: 0.3 },
-  dateDayName: { fontSize: 12, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase' },
-  dateDayNum: { fontSize: 20, fontWeight: '900', color: '#2D3436', marginTop: 4 },
+  dateDayName: { fontSize: moderateScale(12), fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase' },
+  dateDayNum: { fontSize: moderateScale(20), fontWeight: '900', color: '#2D3436', marginTop: verticalScale(4) },
   dateTextActive: { color: '#FFFFFF' },
-  timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  timeBtn: { width: (width - 64) / 3, paddingVertical: 18, backgroundColor: '#FFFFFF', borderRadius: 16, alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
+  timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: scale(12) },
+  timeBtn: { width: (width - scale(64)) / 3, paddingVertical: verticalScale(18), backgroundColor: '#FFFFFF', borderRadius: moderateScale(16), alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' },
   timeBtnActive: { backgroundColor: '#FF4757', borderColor: '#FF4757', elevation: 5 },
   timeBtnText: { fontWeight: '900', color: '#94A3B8' },
   timeBtnTextActive: { color: '#FFF' },
-  summaryCard: { backgroundColor: '#FFF', borderRadius: 30, padding: 25, elevation: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20, borderWidth: 1, borderColor: '#F1F5F9' },
-  totalBadge: { padding: 22, borderRadius: 24, alignItems: 'center', marginBottom: 25 },
-  totalLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
-  totalValue: { color: '#FFF', fontSize: 36, fontWeight: '900' },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#F8FAFC' },
-  infoValue: { color: '#2D3436', fontWeight: '800', fontSize: 16 },
-  addressSection: { marginTop: 10 },
-  addressLabel: { fontSize: 13, fontWeight: '800', color: '#94A3B8', marginBottom: 8 },
-  addressInput: { backgroundColor: '#F8FAFC', borderRadius: 18, padding: 18, minHeight: 120, textAlignVertical: 'top', fontSize: 15, fontWeight: '700', color: '#2D3436', borderWidth: 1, borderColor: '#E2E8F0' },
-  floatingFooter: { position: 'absolute', bottom: 30, left: 20, right: 20, backgroundColor: '#FFFFFF', borderRadius: 24, padding: 15, elevation: 10, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20 },
+  summaryCard: { backgroundColor: '#FFF', borderRadius: moderateScale(30), padding: moderateScale(25), elevation: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20, borderWidth: 1, borderColor: '#F1F5F9' },
+  totalBadge: { padding: moderateScale(22), borderRadius: moderateScale(24), alignItems: 'center', marginBottom: verticalScale(25) },
+  totalLabel: { color: 'rgba(255,255,255,0.8)', fontSize: moderateScale(12), fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  totalValue: { color: '#FFF', fontSize: moderateScale(36), fontWeight: '900' },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: scale(12), marginBottom: verticalScale(15), paddingBottom: verticalScale(15), borderBottomWidth: 1, borderBottomColor: '#F8FAFC' },
+  infoValue: { color: '#2D3436', fontWeight: '800', fontSize: moderateScale(16) },
+  addressSection: { marginTop: verticalScale(10) },
+  addressLabel: { fontSize: moderateScale(13), fontWeight: '800', color: '#94A3B8', marginBottom: verticalScale(8) },
+  addressInput: { backgroundColor: '#F8FAFC', borderRadius: moderateScale(18), padding: moderateScale(18), minHeight: verticalScale(120), textAlignVertical: 'top', fontSize: moderateScale(15), fontWeight: '700', color: '#2D3436', borderWidth: 1, borderColor: '#E2E8F0' },
+  floatingFooter: { position: 'absolute', bottom: verticalScale(30), left: scale(20), right: scale(20), backgroundColor: '#FFFFFF', borderRadius: moderateScale(24), padding: moderateScale(15), elevation: 10, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20 },
   footerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  backPill: { paddingHorizontal: 20 },
+  backPill: { paddingHorizontal: scale(20) },
   backPillText: { color: '#94A3B8', fontWeight: '800' },
-  pillButton: { borderRadius: 20, overflow: 'hidden' },
-  pillGradient: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 25, paddingVertical: 15, gap: 8 },
-  pillText: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' }
+  pillButton: { borderRadius: moderateScale(20), overflow: 'hidden' },
+  pillGradient: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: scale(25), paddingVertical: verticalScale(15), gap: 8 },
+  pillText: { color: '#FFFFFF', fontSize: moderateScale(16), fontWeight: '900' }
 });
 
 export default LadiesParlour;
